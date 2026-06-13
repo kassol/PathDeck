@@ -46,18 +46,20 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-当前为最小骨架（已清理 Xcode 模板 demo），业务模块尚未建立。
+首个业务模块 `FileWorkspace` 已落地（S1 文件浏览）。
 
 ```
-PathDeck/                  App 源码（PathDeckApp + ContentView，最小空骨架）
+PathDeck/                  App 源码
+PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图），见其 AGENTS.md
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
 vendor/                    第三方二进制（GhosttyKit.xcframework，不进 git，按 libghostty recipe 重建）
 docs/prd.md                产品需求文档（权威产品定义）
+docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需求一份
 ```
 
-规划模块（落地时各自补一份子目录 AGENTS.md）：`FileWorkspace` / `Terminal` / `ContextBridge` / `ChangeJournal` / `Extensions`。
+规划模块（落地时各自补一份子目录 AGENTS.md）：`Terminal` / `ContextBridge` / `ChangeJournal` / `Extensions`（`FileWorkspace` 已落地）。
 
 ## 常用命令
 
@@ -66,8 +68,10 @@ docs/prd.md                产品需求文档（权威产品定义）
 xcodebuild -list -project PathDeck.xcodeproj
 # 构建
 xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -configuration Debug build
-# 测试
+# 测试（全量，含会拉起 GUI 的 UITests）
 xcodebuild -project PathDeck.xcodeproj -scheme PathDeck test
+# 仅单元测试（跳过 UITests，纯逻辑验证用这个）
+xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -only-testing:PathDeckTests test
 # 打开工程
 open PathDeck.xcodeproj
 ```
@@ -137,3 +141,4 @@ xcodebuild -deleteComponent MetalToolchain
 
 - 2026-06-13 初始化 AGENTS.md 体系；固化 D1/D2/D3 决策；对齐 Bundle ID 至 `in.riverflows.PathDeck`。
 - 2026-06-13 验证 libghostty 可在本机 macOS 26.5 构建（攻克 zig 0.15.2 × Xcode 26.4+ 的 arm64e tbd 链接死结，改用 Homebrew patched zig）；产出 `vendor/GhosttyKit.xcframework`（arm64 Release strip，~23MB），固化重建 recipe；临时构建工具链（zig/llvm@20/lld@20/Metal Toolchain）已清理。
+- 2026-06-13 S1 文件浏览切片落地：新增 `FileWorkspace` 模块（启动即家目录的 `NSTableView` 文件列表 + 双击进入 / ⌘↑ 返回上级）；关闭 App Sandbox 落实 D1（移除 `ENABLE_USER_SELECTED_FILES`）；建立 `docs/plans/` 计划目录（按日期 + 需求名命名）。

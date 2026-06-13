@@ -9,3 +9,6 @@ build/
 
 # Vendored binaries — rebuild via AGENTS.md libghostty recipe
 vendor/*.xcframework
+
+# Test coverage raw profiles
+*.profraw
