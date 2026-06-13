@@ -11,7 +11,7 @@
 | 切片 | 内容 | 状态 | 验证目标 |
 |---|---|---|---|
 | **S1** | 启动即家目录 + NSTableView 文件列表 + 进出目录 | 已完成 ✓ | 启动看到 `~` 内容，能双击进子目录、返回上级 |
-| S2 | libghostty 嵌入冒烟 | 待办 | App 内跑起一个真 PTY shell surface（最高技术风险，紧随 S1） |
+| S2 | libghostty 嵌入冒烟 | 完成 ✓ | build + 单测 + GUI 渲染/键盘回显走查均通过。见 `2026-06-13-s2-libghostty-smoke.md` |
 | S3 | FSEvents 监听 demo + SQLite 事件写入 demo | 待办 | 当前目录文件增删改能写入 SQLite 并刷新列表 |
 
 S2 排在 S1 之后是风险排序：libghostty 是整个产品最脆弱的假设（"能嵌入并跑起真 PTY"），`vendor/GhosttyKit.xcframework` 已构建但尚未实测嵌入；越早证伪越省。不把它拖到 M1 完整工作台之后。

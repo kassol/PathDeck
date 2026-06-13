@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BDA2E8A12FDCEFB0002B9364 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDA2E8A02FDCEFB0002B9364 /* GhosttyKit.xcframework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		BDA2E87D2FDCEFB0002B9364 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,11 +31,26 @@
 		BDA2E86F2FDCEFAF002B9364 /* PathDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PathDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDA2E87C2FDCEFB0002B9364 /* PathDeckTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PathDeckTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDA2E8862FDCEFB0002B9364 /* PathDeckUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PathDeckUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BDA2E8A02FDCEFB0002B9364 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = vendor/GhosttyKit.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BDA2E8A32FDCEFB0002B9364 /* Exceptions for "PathDeck" folder in "PathDeck" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				FileWorkspace/AGENTS.md,
+				Terminal/AGENTS.md,
+			);
+			target = BDA2E86E2FDCEFAF002B9364 /* PathDeck */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BDA2E8712FDCEFAF002B9364 /* PathDeck */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BDA2E8A32FDCEFB0002B9364 /* Exceptions for "PathDeck" folder in "PathDeck" target */,
+			);
 			path = PathDeck;
 			sourceTree = "<group>";
 		};
@@ -52,6 +71,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BDA2E8A12FDCEFB0002B9364 /* GhosttyKit.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +98,7 @@
 				BDA2E8712FDCEFAF002B9364 /* PathDeck */,
 				BDA2E87F2FDCEFB0002B9364 /* PathDeckTests */,
 				BDA2E8892FDCEFB0002B9364 /* PathDeckUITests */,
+				BDA2E8A22FDCEFB0002B9364 /* Frameworks */,
 				BDA2E8702FDCEFAF002B9364 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +111,14 @@
 				BDA2E8862FDCEFB0002B9364 /* PathDeckUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		BDA2E8A22FDCEFB0002B9364 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				BDA2E8A02FDCEFB0002B9364 /* GhosttyKit.xcframework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -401,6 +430,10 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/vendor",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -408,6 +441,19 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Metal,
+					"-framework",
+					QuartzCore,
+					"-framework",
+					IOSurface,
+					"-framework",
+					UniformTypeIdentifiers,
+					"-framework",
+					Carbon,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = in.riverflows.PathDeck;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -432,6 +478,10 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/vendor",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -439,6 +489,19 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Metal,
+					"-framework",
+					QuartzCore,
+					"-framework",
+					IOSurface,
+					"-framework",
+					UniformTypeIdentifiers,
+					"-framework",
+					Carbon,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = in.riverflows.PathDeck;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

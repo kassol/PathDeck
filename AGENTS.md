@@ -51,6 +51,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 ```
 PathDeck/                  App 源码
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图），见其 AGENTS.md
+PathDeck/Terminal/         内嵌 libghostty 真终端模块（S2 冒烟），见其 AGENTS.md
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
@@ -59,7 +60,7 @@ docs/prd.md                产品需求文档（权威产品定义）
 docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需求一份
 ```
 
-规划模块（落地时各自补一份子目录 AGENTS.md）：`Terminal` / `ContextBridge` / `ChangeJournal` / `Extensions`（`FileWorkspace` 已落地）。
+规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `ChangeJournal` / `Extensions`（`FileWorkspace`、`Terminal` 已落地）。
 
 ## 常用命令
 
@@ -89,7 +90,7 @@ open PathDeck.xcodeproj
 - **D3 部署目标 macOS 26.5。**
   激进、收窄用户群，早期验证可接受。引入任何 API 前确认 26.5 可用，不为兼容旧系统做降级分支。
 
-### libghostty 集成（已验证可构建，产物在 `vendor/`）
+### libghostty 集成（已验证可构建 + 可嵌入运行，产物在 `vendor/`）
 
 libghostty 无官方预编译产物 / 无 SPM / Homebrew 库形态 / 无官方 Swift 封装；C API（`ghostty.h`）功能稳定但签名仍 in flux（头文件自述 "not meant to be a general purpose embedding API (yet)"）。License：Ghostty MIT。已在本机 macOS 26.5 成功构建出含完整 C API 符号的 `GhosttyKit.xcframework`，产物落在 `vendor/`（见下）。
 
@@ -122,19 +123,20 @@ xcodebuild -deleteComponent MetalToolchain
 
 **产物**：`vendor/GhosttyKit.xcframework`（macOS arm64、Release strip、~23MB，含 `ghostty.h` + `module.modulemap`，可 `import GhosttyKit`）。该二进制不进 git（见 `.gitignore`），需要时按上方 recipe 重建。
 
-**集成方式（依据 Kytos 先例 + `ghostty.h` 分析，PathDeck 尚未实测嵌入）**：拖入 target 的 "Frameworks, Libraries, and Embedded Content"；`OTHER_LDFLAGS` 加 `-lstdc++`；把 terminfo（`xterm-ghostty`，由 Ghostty 构建产出 `zig-out/share/terminfo`）打进 app bundle 并运行时设 `GHOSTTY_RESOURCES_DIR`/`TERMINFO`；自定义 `NSView`(CAMetalLayer backing) 调用顺序 `ghostty_init`→`ghostty_app_new`(填 wakeup/action/clipboard 回调)→`ghostty_surface_config_new`(platform.macos.nsview)→`ghostty_surface_new`，`drawRect` 调 `ghostty_surface_draw`、resize 调 `ghostty_surface_set_size`、事件转发 text/key/mouse。约 1500 行 Swift 胶水量级。
+**集成方式（cmux + con-terminal 两生产项目实证；cmux 与 PathDeck 同栈 Swift+AppKit+预编译 xcframework，逐行锚点见 `docs/plans/2026-06-13-s2-libghostty-smoke.md` §参考来源）**：xcframework 加入 target Frameworks（静态库，Do Not Embed）；Swift 直接 `import GhosttyKit`（module 桥接，无需 modulemap / bridging include）；`OTHER_LDFLAGS = -lc++ -framework Metal -framework QuartzCore -framework IOSurface -framework UniformTypeIdentifiers -framework Carbon`（注意 `-lc++` 非 `-lstdc++`）。调用顺序 `ghostty_init`→`ghostty_config_new/finalize`→`ghostty_app_new`（填 6 个 runtime callbacks；`read_clipboard_cb` 视 GhosttyKit 构建可能需 `unsafeBitCast` 绕 bool↔Void importer 差异，本仓库当前产物实测正确导入为 `Bool`、可直接字面闭包）→ NSView(`makeBackingLayer`→`CAMetalLayer`，**须已挂 window 再建 surface**，否则黑屏)→`ghostty_surface_config_new`(platform.macos.nsview)→`ghostty_surface_new`→`set_display_id`/`set_content_scale`/`set_size`/`refresh`。**渲染由 libghostty 内部 CVDisplayLink 自驱，宿主从不调 `ghostty_surface_draw`**（`wakeup_cb`→合并到主队列的 `ghostty_app_tick` 只泵 PTY I/O，不是渲染）；resize 调 `set_size`，事件转发 text/key/mouse。terminfo：冒烟经 `surface_config.env_vars` 注入 `TERM=xterm-256color`；正式集成补 `xterm-ghostty`——预编译 xcframework **不含 Ghostty 的 zig-out 资源**（terminfo / shell-integration / themes），须单独从源码取。约 1500 行 Swift 胶水量级。
 
 **约束**：
 
 - 必须 pin Ghostty commit；升级当作 breaking 处理、预算迁移成本。
-- 业务层只依赖 `TerminalEngine` 协议，禁止在业务代码直接散用 libghostty C 符号。
+- 业务层只依赖 `TerminalEngine` 协议，禁止在业务代码直接散用 libghostty C 符号（`Terminal` 模块当前为 S2 spike，暂直连 C 符号、未抽象协议，M1 接入文件工作台时补——见 `PathDeck/Terminal/AGENTS.md`）。
 - fallback：SwiftTerm（纯 SPM、开箱即用，CPU 渲染、特性 / 性能低一档）。
 
 ### 编码与协作
 
 - 外科手术式修改：每行改动可追溯到明确需求，不顺手重构 / 改格式 / 动死代码。
 - 里程碑式提交；commit message 用英文，第三方可读产出物中不出现个人称谓。
-- 改完跑构建 + 测试。
+- 改完跑构建 + 测试（涉及 synchronized group 资源变动时用 **clean build**：同名 resource 冲突等问题增量 build 不暴露）。
+- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
 ## 变更日志
@@ -142,3 +144,5 @@ xcodebuild -deleteComponent MetalToolchain
 - 2026-06-13 初始化 AGENTS.md 体系；固化 D1/D2/D3 决策；对齐 Bundle ID 至 `in.riverflows.PathDeck`。
 - 2026-06-13 验证 libghostty 可在本机 macOS 26.5 构建（攻克 zig 0.15.2 × Xcode 26.4+ 的 arm64e tbd 链接死结，改用 Homebrew patched zig）；产出 `vendor/GhosttyKit.xcframework`（arm64 Release strip，~23MB），固化重建 recipe；临时构建工具链（zig/llvm@20/lld@20/Metal Toolchain）已清理。
 - 2026-06-13 S1 文件浏览切片落地：新增 `FileWorkspace` 模块（启动即家目录的 `NSTableView` 文件列表 + 双击进入 / ⌘↑ 返回上级）；关闭 App Sandbox 落实 D1（移除 `ENABLE_USER_SELECTED_FILES`）；建立 `docs/plans/` 计划目录（按日期 + 需求名命名）。
+- 2026-06-13 调研 cmux（Swift+Ghostty，与 PathDeck 同栈）+ con-terminal（Rust+同一套 libghostty C API）两生产项目的宿主集成实现，实证嵌入路径可行；据此修正集成方式（`-lstdc++`→`-lc++`+frameworks、`@import GhosttyKit` module 桥接、**宿主不调 `ghostty_surface_draw`**（Ghostty 内部 CVDisplayLink 自驱）、`read_clipboard_cb` importer 陷阱、surface 须挂 window 后再建、xcframework 不含 zig-out 资源）；产出 S2 冒烟计划 `docs/plans/2026-06-13-s2-libghostty-smoke.md`。
+- 2026-06-13 S2 libghostty 嵌入冒烟落地：新增 `Terminal` 模块（`GhosttyApp`/`GhosttySurfaceView`/`TerminalSmokeView` + ⌃⌥⌘T 独立终端窗口）；pbxproj 链接 `GhosttyKit.xcframework` + 生产 LDFLAGS + `membershipExceptions` 排除各 `AGENTS.md` 出 bundle resource（修同名 resource 冲突）。Debug/Release clean build + 链接单测（`GhosttyLinkTests`）通过，证明自构建 xcframework 符号完整、`read_clipboard_cb` 实测导入为 `Bool`。渲染 + `echo`/`ls` 键盘回显 GUI 走查通过——**产品最脆弱假设（libghostty 能嵌入跑 PTY）证实，主路成立，不启用 SwiftTerm fallback**。
