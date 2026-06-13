@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Vendored binaries — rebuild via AGENTS.md libghostty recipe
+vendor/*.xcframework
