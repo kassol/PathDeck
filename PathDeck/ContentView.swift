@@ -10,7 +10,8 @@ struct ContentView: View {
     @State private var model = WorkspaceModel()
     @State private var terminalEngine = GhosttyTerminalEngine()
     @State private var terminalHeight: CGFloat = 250
-    @State private var terminalCreated = false
+    @State private var terminalSessions: [TerminalSession] = []
+    @State private var activeTerminalID: UUID?
 
     private let terminalMinHeight: CGFloat = 100
     private let terminalMaxFraction: CGFloat = 0.6
@@ -70,10 +71,20 @@ struct ContentView: View {
                         maxHeight: geometry.size.height * terminalMaxFraction,
                         containerHeight: geometry.size.height
                     )
+                    TerminalTabBar(
+                        sessions: $terminalSessions,
+                        activeID: $activeTerminalID,
+                        onNewTab: { createTerminalTab() },
+                        onCloseTab: { closeTerminalTab($0) }
+                    )
                 }
 
-                if terminalCreated {
-                    TerminalPanelView(cwd: model.currentURL, engine: terminalEngine)
+                if !terminalSessions.isEmpty {
+                    TerminalPanelView(
+                        activeSessionID: activeTerminalID,
+                        sessionIDs: Set(terminalSessions.map(\.id)),
+                        engine: terminalEngine
+                    )
                         .frame(height: model.isTerminalVisible ? terminalHeight : 0)
                         .clipped()
                         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -97,7 +108,11 @@ struct ContentView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
 
-                        ChangeListView(events: model.changes) { event in
+                        ChangeListView(
+                            events: model.changes,
+                            hiddenCount: model.hiddenCount,
+                            onRulesChanged: { model.reload() }
+                        ) { event in
                             let url = URL(fileURLWithPath: event.path)
                             if FileManager.default.fileExists(atPath: event.path) {
                                 model.selectedURLs = [url]
@@ -133,7 +148,9 @@ struct ContentView: View {
             }
         }
         .onChange(of: model.isTerminalVisible) { _, visible in
-            if visible { terminalCreated = true }
+            if visible && terminalSessions.isEmpty {
+                createTerminalTab()
+            }
         }
         .focusedSceneValue(\.workspaceModel, model)
         .focusedSceneValue(\.sendPathAction) { urls in
@@ -155,7 +172,31 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Terminal Tab Management
+
+    private func createTerminalTab() {
+        let id = terminalEngine.createSession(cwd: model.currentURL)
+        let index = terminalSessions.count + 1
+        let title = index == 1 ? "Terminal" : "Terminal \(index)"
+        terminalSessions.append(TerminalSession(id: id, title: title, cwd: model.currentURL))
+        activeTerminalID = id
+    }
+
+    private func closeTerminalTab(_ id: UUID) {
+        terminalEngine.closeSession(id)
+        terminalSessions.removeAll { $0.id == id }
+        if activeTerminalID == id {
+            activeTerminalID = terminalSessions.last?.id
+        }
+        if terminalSessions.isEmpty {
+            model.isTerminalVisible = false
+        }
+    }
+
+    // MARK: - Terminal Input
+
     private func handleTerminalDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard let activeID = activeTerminalID else { return false }
         let lock = NSLock()
         var urls: [URL] = []
         let group = DispatchGroup()
@@ -171,28 +212,27 @@ struct ContentView: View {
                 group.leave()
             }
         }
-        group.notify(queue: .main) {
+        group.notify(queue: .main) { [activeID] in
             guard !urls.isEmpty else { return }
             let escaped = ShellEscape.escapeMultiple(
                 urls.map { $0.path(percentEncoded: false) }
             )
-            terminalEngine.writeText(escaped)
+            terminalEngine.writeText(escaped, to: activeID)
         }
         return true
     }
 
     private func sendPathToTerminal(_ urls: [URL]) {
+        if !model.isTerminalVisible {
+            model.isTerminalVisible = true
+            if terminalSessions.isEmpty { createTerminalTab() }
+        }
+        guard let activeID = activeTerminalID else { return }
         let escaped = ShellEscape.escapeMultiple(
             urls.map { $0.path(percentEncoded: false) }
         )
-        if model.isTerminalVisible {
-            terminalEngine.writeText(escaped)
-        } else {
-            model.isTerminalVisible = true
-            terminalCreated = true
-            DispatchQueue.main.async {
-                terminalEngine.writeText(escaped)
-            }
+        DispatchQueue.main.async {
+            terminalEngine.writeText(escaped, to: activeID)
         }
     }
 }

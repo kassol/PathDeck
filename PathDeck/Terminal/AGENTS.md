@@ -9,14 +9,16 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 
 ## 目录结构
 
-- `TerminalEngine.swift` — 协议定义：`makeTerminalView(cwd:) -> NSView` + `writeText(_ text: String)`，业务层唯一依赖
-- `GhosttyTerminalEngine.swift` — 协议实现：包装 `GhosttySurfaceView`，设置 `initialCwd`，弱引用 surface view 实现 `writeText`
-- `TerminalPanelView.swift` — `NSViewRepresentable`，只依赖 `TerminalEngine` 协议，供主窗口底部面板
+- `TerminalEngine.swift` — 协议定义：多 session API（`createSession(cwd:) -> UUID` / `closeSession` / `terminalView(for:)` / `writeText(_:to:)`），业务层唯一依赖
+- `GhosttyTerminalEngine.swift` — 协议实现：管理多个 `GhosttySurfaceView` 实例（`[UUID: GhosttySurfaceView]` 字典），延迟创建 surface，关闭时释放
+- `TerminalSession.swift` — 会话值类型（id, title, cwd），SwiftUI 可 ForEach
+- `TerminalTabBar.swift` — 多 Tab 栏 SwiftUI 视图：tab 切换 / 新建（+按钮）/ 关闭（×按钮）/ 双击重命名
+- `TerminalPanelView.swift` — `NSViewRepresentable` 多 session 容器：container NSView + `isHidden` 切换活跃 surface + 焦点跟随
 - `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + 6 个 runtime callbacks + `wakeup`→合并主队列 `app_tick`
 - `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置
 - `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载（S2 遗留，保留作调试入口）
 
-入口：主窗口底部 Terminal Panel（⌃\` 或 Toolbar 按钮切换）；独立冒烟窗口（⌃⌥⌘T）。
+入口：主窗口底部 Terminal Panel（⌃\` 或 Toolbar 按钮切换），支持多 tab；独立冒烟窗口（⌃⌥⌘T）。
 
 ## 构建前置
 
@@ -44,6 +46,7 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 
 ## 变更日志
 
+- 2026-06-14 S12 多 Terminal Tab 落地：`TerminalEngine` 协议从单 session 改为多 session API（`createSession`/`closeSession`/`terminalView(for:)`/`writeText(_:to:)`）。新增 `TerminalSession.swift` 值类型 + `TerminalTabBar.swift`（tab 切换/新建/关闭/双击重命名）。`GhosttyTerminalEngine` 管理 `[UUID: GhosttySurfaceView]` 字典，surface 延迟到首次 `terminalView(for:)` 时创建。`TerminalPanelView` 重写为 container NSView（子 view `isHidden` 切换，保活所有 session PTY）。关闭最后一个 tab → 终端面板隐藏。Send Path / 拖拽路由到 active tab。Debug/Release build + 82 个单测通过（新增 TerminalSessionTests ×4）。
 - 2026-06-13 S2 落地：libghostty 嵌入冒烟（`GhosttyApp` / `GhosttySurfaceView` / `TerminalSmokeView` + 独立终端窗口）。Debug/Release clean build + 链接单测通过；GUI 走查（渲染 + `echo`/`ls` 回显）通过，最脆弱假设证实、不启用 SwiftTerm fallback。实测本 xcframework 符号完整、`read_clipboard_cb` 正确导入为 `Bool`（无需 cmux 的 `unsafeBitCast` 兼容）。pbxproj 用 `membershipExceptions` 排除 `AGENTS.md` 出 bundle resource。
 - 2026-06-14 S9 落地：`TerminalEngine` 协议新增 `writeText`；`GhosttySurfaceView` 新增 `insertText`（调用 `ghostty_surface_text` C API）；`GhosttyTerminalEngine` 持有 surface view 弱引用实现 `writeText`。Context Bridge 文本注入能力就绪。
 - 2026-06-14 S8 落地：`TerminalEngine` 协议 + `GhosttyTerminalEngine` 实现 + `TerminalPanelView`（主窗口底部面板）。`GhosttySurfaceView` 新增 `initialCwd` 属性。⌃\` / Toolbar 按钮切换面板；可拖拽分割线调整高度；展开时隐藏「最近变化」。终端 view 始终在 tree 中（`frame(height:0)+clipped` 隐藏，避免 shell 会话丢失）；分割线用 `coordinateSpace` + `location` 定位（消除拖拽闪烁）。冒烟窗口保留。Debug/Release build + 56 个单测通过。

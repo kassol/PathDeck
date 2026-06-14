@@ -46,12 +46,12 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口（`TerminalEngine` 协议 + ⌃\` 切换）+ S9 文本注入能力。M2 进行中。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合。
 
 ```
 PathDeck/                  App 源码
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图），见其 AGENTS.md
-PathDeck/Terminal/         内嵌 libghostty 真终端模块（S2 冒烟），见其 AGENTS.md
+PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议），见其 AGENTS.md
 PathDeck/ChangeJournal/    文件变化感知与记录模块（FSEvents + SQLite），见其 AGENTS.md
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
@@ -131,7 +131,7 @@ xcodebuild -deleteComponent MetalToolchain
 **约束**：
 
 - 必须 pin Ghostty commit；升级当作 breaking 处理、预算迁移成本。
-- 业务层只依赖 `TerminalEngine` 协议，禁止在业务代码直接散用 libghostty C 符号（`Terminal` 模块当前为 S2 spike，暂直连 C 符号、未抽象协议，M1 接入文件工作台时补——见 `PathDeck/Terminal/AGENTS.md`）。
+- 业务层只依赖 `TerminalEngine` 协议，禁止在业务代码直接散用 libghostty C 符号。libghostty C 符号限于 `GhosttyApp.swift` 和 `GhosttySurfaceView.swift` 内部（见 `PathDeck/Terminal/AGENTS.md`）。
 - fallback：SwiftTerm（纯 SPM、开箱即用，CPU 渲染、特性 / 性能低一档）。
 
 ### 编码与协作
@@ -139,22 +139,15 @@ xcodebuild -deleteComponent MetalToolchain
 - 外科手术式修改：每行改动可追溯到明确需求，不顺手重构 / 改格式 / 动死代码。
 - 里程碑式提交；commit message 用英文，第三方可读产出物中不出现个人称谓。
 - 改完跑构建 + 测试（涉及 synchronized group 资源变动时用 **clean build**：同名 resource 冲突等问题增量 build 不暴露）。
-- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`。
+- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`、`ChangeJournal/AGENTS.md`。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
 ## 变更日志
 
-- 2026-06-13 初始化 AGENTS.md 体系；固化 D1/D2/D3 决策；对齐 Bundle ID 至 `in.riverflows.PathDeck`。
-- 2026-06-13 验证 libghostty 可在本机 macOS 26.5 构建（攻克 zig 0.15.2 × Xcode 26.4+ 的 arm64e tbd 链接死结，改用 Homebrew patched zig）；产出 `vendor/GhosttyKit.xcframework`（arm64 Release strip，~23MB），固化重建 recipe；临时构建工具链（zig/llvm@20/lld@20/Metal Toolchain）已清理。
-- 2026-06-13 S1 文件浏览切片落地：新增 `FileWorkspace` 模块（启动即家目录的 `NSTableView` 文件列表 + 双击进入 / ⌘↑ 返回上级）；关闭 App Sandbox 落实 D1（移除 `ENABLE_USER_SELECTED_FILES`）；建立 `docs/plans/` 计划目录（按日期 + 需求名命名）。
-- 2026-06-13 调研 cmux（Swift+Ghostty，与 PathDeck 同栈）+ con-terminal（Rust+同一套 libghostty C API）两生产项目的宿主集成实现，实证嵌入路径可行；据此修正集成方式（`-lstdc++`→`-lc++`+frameworks、`@import GhosttyKit` module 桥接、**宿主不调 `ghostty_surface_draw`**（Ghostty 内部 CVDisplayLink 自驱）、`read_clipboard_cb` importer 陷阱、surface 须挂 window 后再建、xcframework 不含 zig-out 资源）；产出 S2 冒烟计划 `docs/plans/2026-06-13-s2-libghostty-smoke.md`。
-- 2026-06-13 从 `design/` 两份 standalone 设计稿（设计系统 + 交互原型）抽取 `docs/design.md`（UI 视觉权威参考）；交叉核验 metrics/色值/布局后定稿。
-- 2026-06-13 S2 libghostty 嵌入冒烟落地：新增 `Terminal` 模块（`GhosttyApp`/`GhosttySurfaceView`/`TerminalSmokeView` + ⌃⌥⌘T 独立终端窗口）；pbxproj 链接 `GhosttyKit.xcframework` + 生产 LDFLAGS + `membershipExceptions` 排除各 `AGENTS.md` 出 bundle resource（修同名 resource 冲突）。Debug/Release clean build + 链接单测（`GhosttyLinkTests`）通过，证明自构建 xcframework 符号完整、`read_clipboard_cb` 实测导入为 `Bool`。渲染 + `echo`/`ls` 键盘回显 GUI 走查通过——**产品最脆弱假设（libghostty 能嵌入跑 PTY）证实，主路成立，不启用 SwiftTerm fallback**。
-- 2026-06-14 S4 路径导航 + 排序 + 隐藏文件落地（M1 第一切片）：路径面包屑栏（`PathBarView`，可点击段跳转 + 家目录显示 `~`）+ NSTableView 四列列头排序（`sortDescriptorPrototype` + 目录始终在前 + nil 排末尾）+ ⌘⇧. 隐藏文件切换 + ⌘⌥C 复制路径。排序职责从 `DirectoryLister` 移至 `WorkspaceModel.sortedItems`（纯函数，可单测）。菜单命令通过 `@FocusedValue` + `@Entry` 宏连接 ContentView ↔ Commands。5 个排序单测通过。
-- 2026-06-14 S3 FSEvents + SQLite 事件写入落地：新增 `ChangeJournal` 模块（`ChangeEvent`/`ChangeStore`/`FSWatcher`/`ChangeListView`）；引入 GRDB.swift 7.11.0（SPM）；SQLite 模式 WAL + `synchronous=NORMAL` + `busy_timeout=5s` + `auto_vacuum=INCREMENTAL`；FSEvents 用 `kFSEventStreamCreateFlagFileEvents` 逐文件粒度，事件分类用 flag 组合 + 文件存在性兜底；`ContentView` 底部固定 180pt 变化列表面板。Debug/Release clean build + 5 个 ChangeStoreTests 通过。**M0 三项验收标准全部达成**。
-- 2026-06-14 S5 右键菜单 + 文件操作落地（M1 第二切片）：NSTableView 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Move to Trash（⌘⌫）/Rename（Enter 触发 inline editing，Esc 取消）/New Folder（⌘⇧N，创建后自动进入重命名）/Reveal in Finder/Copy Path。`FileNSTableView` 子类处理 Return 键；`Coordinator` 实现 `NSMenuDelegate` + `NSTextFieldDelegate` + `doCommandBy:` 拦截 Esc；`WorkspaceModel` 新增 `selectedURLs`/`pendingRenameURL` + 文件操作方法（`trashItems`/`renameItem`/`newFolder`）；双击文件改为用默认应用打开。修复：FSWatcher 加 `kFSEventStreamEventFlagItemIsDir` 处理（目录事件此前被过滤）；`menu.autoenablesItems = false`（多选时重命名正确灰掉）；编辑中跳过 `reloadData()`；`menuNeedsUpdate` 加 `clickedRow` 越界保护；⌘⌫ 改为独立 CommandMenu（原 `replacing: .undoRedo` 吞掉了 Edit 菜单的 Undo/Redo）。Debug/Release build + 46 个单测通过（新增 FSWatcherClassify×8 + WorkspaceModelFileOps×19 + newFolderName×4）。
-- 2026-06-14 S6 Quick Look 预览落地（M1 第三切片）：空格键触发 `QLPreviewPanel`（打开/关闭切换）；`FileNSTableView` 实现 QL 所有权协议（`acceptsPreviewPanelControl`/`beginPreviewPanelControl`/`endPreviewPanelControl`）；`Coordinator` 遵循 `QLPreviewPanelDataSource`（基于选中文件提供 items，多选支持翻页）+ `QLPreviewPanelDelegate`（源 frame 动画锚定名称列单元格）；`handle` 只转发上下箭头 + 显式处理空格关闭（不能转发所有键盘事件回 table view，否则空格 keyUp 重新触发关闭）；选中文件切换时 QL 面板 `reloadData()`。`updateNSView` 加 `itemsChanged` 守卫——`@Observable` 任意属性变化都会触发 `updateNSView`，无条件 `reloadData()` 会破坏 QLPreviewPanel responder chain。仅改动 `FileTableView.swift`，~80 行。Debug/Release build + 46 个单测通过。
-- 2026-06-14 S7 打开任意文件夹 + 文件名搜索落地（M1 收尾切片）：⌘O 打开文件夹（NSOpenPanel）+ Open Recent 菜单（`RecentFolders`，UserDefaults 持久化，10 项上限去重）+ 启动恢复上次目录（`lastOpenedFolder`）+ 拖放文件夹到窗口（`.onDrop` + `UTType.fileURL`）+ ⌘F 搜索栏（`SearchBarView` 包装 `NSSearchField`）+ 文件名实时过滤（`localizedCaseInsensitiveContains`，`allItems` → `applySearch()` → `items`）+ Esc 关闭搜索并恢复完整列表。`FileCommands` 改为 `replacing: .newItem`；`ViewCommands` 添加 `replacing: .textEditing`（⌘F）。新增 `RecentFolders.swift` + `SearchBarView.swift`。Debug/Release clean build + 56 个单测通过（新增 RecentFolders×4 + SearchFilter×6）。**M1 全部 scope 闭合**。
-- 2026-06-14 S9 Send Path to Terminal 落地（M2 第二切片，Context Bridge 首切）：右键菜单「发送路径到终端」（单选/多选，POSIX 单引号 shell-escaped）+ 菜单快捷键 ⌘⇧T + 终端隐藏时自动展开再注入。`TerminalEngine` 协议新增 `writeText`；`GhosttySurfaceView.insertText` 调用 `ghostty_surface_text` C API；`GhosttyTerminalEngine` 持有 surface view 弱引用。新增 `ShellEscape.swift` 纯函数。`ContentView` 通过 `FocusedValues.sendPathAction` 暴露给菜单命令。Debug/Release build + 66 个单测通过（新增 ShellEscape×10）。
-- 2026-06-14 S10 拖拽到终端 + 变化感知增强落地（M2 第三切片）：① 文件列表行可拖出（`pasteboardWriterForRow` + `setDraggingSourceOperationMask`）；终端面板 SwiftUI `.onDrop` 接收文件拖放 → shell-escape → `writeText`（NSLock 保护多 provider 并发 append）。② 变化面板重写：`ChangeListView` 从平铺 List 改为 FilterBar（全部/新增/修改/删除）+ 时间分组 Section（刚刚/5分钟内/今天/更早）+ 行点击选中+滚动定位。③ `WorkspaceModel` 新增 `changeIndicators`（FSEvents 触发填充，30s Timer 清除）+ `scrollToURL`。④ 文件列表 name column 新增变化标记色点（6×6 圆形，绿=新增/橙=修改，30s 淡出）。⑤ `ChangeEvent` 新增 `ChangeTimeGroup` 枚举 + `grouped()` 时间分组纯函数 + `nsColor` 属性。⑥ `FSWatcher.handleRawEvents` 新增 same-path coalescing（同一批次同一 path 只取首条成功分类的事件，修复 `touch` 产生双条记录）。Debug/Release build + 72 个单测通过（新增 ChangeTimeGroup×6）。
-- 2026-06-14 S8 Terminal Panel 嵌入主窗口落地（M2 第一切片）：新增 `TerminalEngine` 协议（`makeTerminalView(cwd:) -> NSView`）+ `GhosttyTerminalEngine` 实现 + `TerminalPanelView`（`NSViewRepresentable`，只依赖协议）。`GhosttySurfaceView` 新增 `initialCwd` 属性支持可配置工作目录。主窗口底部可展开/收起终端面板（⌃\` / Toolbar 按钮切换，可拖拽分割线调整高度）；终端展开时隐藏「最近变化」面板。冒烟窗口保留。Review 修复：① 终端 view 始终在 tree 中（`frame(height:0)+clipped` 隐藏），避免 SwiftUI `if/else` 销毁 surface 导致 shell 会话丢失；② 分割线拖拽改用 `coordinateSpace(.named)` + `location` 定位，消除 `translation` 坐标系偏移引起的闪烁。Debug/Release build + 56 个单测通过。
+里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
+
+- 2026-06-14 **M2 闭合**（S8–S12）：Terminal Panel 嵌入主窗口 + Context Bridge（Send Path + 拖拽到终端）+ 变化面板增强（时间分组/类型过滤/点击定位/文件标记）+ 忽略规则（默认噪音过滤 + 用户自定义 glob）+ 多 Terminal Tab（独立 PTY/cwd/scrollback）。82 个单测通过。
+- 2026-06-14 **M1 闭合**（S4–S7）：路径导航/排序/隐藏文件 + 右键菜单文件操作 + Quick Look 预览 + 打开文件夹/搜索。56 个单测通过。
+- 2026-06-14 **M0 闭合**（S3）：FSEvents + SQLite 变化记录。
+- 2026-06-13 **技术验证**（S1–S2）：文件浏览 + libghostty 嵌入冒烟。libghostty 能嵌入跑 PTY 的最脆弱假设证实。
+- 2026-06-13 初始化 AGENTS.md 体系；固化 D1/D2/D3 决策；libghostty 构建攻坚（zig 0.15.2 × Xcode 26.4+ arm64e tbd）；设计系统文档提取。

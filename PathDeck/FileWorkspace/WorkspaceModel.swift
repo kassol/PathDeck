@@ -15,6 +15,7 @@ final class WorkspaceModel {
     private(set) var allItems: [FileItem] = []
     private(set) var changes: [ChangeEvent] = []
     private(set) var changeIndicators: [String: ChangeEventType] = [:]
+    private(set) var hiddenCount: Int = 0
 
     var sortColumn: SortColumn = .name
     var sortAscending: Bool = true
@@ -54,6 +55,7 @@ final class WorkspaceModel {
     private var watcher: FSWatcher?
     private var changeStore: ChangeStore?
     private var indicatorTimers: [String: Timer] = [:]
+    private var recentEventKeys: [String: Date] = [:]
 
     init(root: URL? = nil) {
         if let root {
@@ -237,15 +239,32 @@ final class WorkspaceModel {
 
     private func refreshChanges() {
         let dir = currentURL.path(percentEncoded: false)
-        changes = (try? changeStore?.recentEvents(in: dir)) ?? []
+        let raw = (try? changeStore?.recentEvents(in: dir, limit: 200)) ?? []
+        let filtered = raw.filter { !IgnoreRules.shouldIgnore(fileName: $0.fileName) }
+        changes = Array(filtered.prefix(50))
+        hiddenCount = raw.count - filtered.count
     }
 
     private func handleFSEvents(_ events: [(path: String, type: ChangeEventType)]) {
+        let now = Date()
+        let accepted = events.filter { event in
+            let fileName = URL(fileURLWithPath: event.path).lastPathComponent
+            if IgnoreRules.shouldIgnore(fileName: fileName) { return false }
+            let key = "\(event.path)|\(event.type)"
+            if let last = recentEventKeys[key],
+               now.timeIntervalSince(last) < 1.0 { return false }
+            return true
+        }
+        for event in accepted {
+            recentEventKeys["\(event.path)|\(event.type)"] = now
+        }
+        recentEventKeys = recentEventKeys.filter { now.timeIntervalSince($0.value) < 5.0 }
+
         let dir = currentURL.path(percentEncoded: false)
-        let batch = events.map { (path: $0.path, type: $0.type, directory: dir) }
+        let batch = accepted.map { (path: $0.path, type: $0.type, directory: dir) }
         try? changeStore?.recordBatch(batch)
 
-        for event in events {
+        for event in accepted {
             guard event.type != .deleted else { continue }
             changeIndicators[event.path] = event.type
             indicatorTimers[event.path]?.invalidate()

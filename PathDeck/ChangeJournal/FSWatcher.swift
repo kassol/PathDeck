@@ -30,8 +30,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         let paths = [dirPath] as CFArray
         let flags: FSEventStreamCreateFlags =
             UInt32(kFSEventStreamCreateFlagFileEvents) |
-            UInt32(kFSEventStreamCreateFlagUseCFTypes) |
-            UInt32(kFSEventStreamCreateFlagNoDefer)
+            UInt32(kFSEventStreamCreateFlagUseCFTypes)
 
         guard let stream = FSEventStreamCreate(
             nil,
