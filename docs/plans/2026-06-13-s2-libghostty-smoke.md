@@ -11,7 +11,7 @@
 |---|---|---|
 | S1 | 启动即家目录 + NSTableView 文件列表 + 进出目录 | 已完成 ✓ |
 | **S2** | **libghostty 嵌入冒烟** | **完成 ✓（build + 单测 + GUI 渲染/回显走查均通过）** |
-| S3 | FSEvents 监听 demo + SQLite 事件写入 demo | 待办 |
+| S3 | FSEvents 监听 demo + SQLite 事件写入 demo | 完成 ✓ |
 
 S2 验证整个产品最脆弱的假设：libghostty「能嵌入进我们自己的 NSView 并跑起真 PTY shell」。`vendor/GhosttyKit.xcframework` 已构建但从未实测嵌入。
 

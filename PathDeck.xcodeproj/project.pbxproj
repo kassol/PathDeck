@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		BDA2E8A12FDCEFB0002B9364 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDA2E8A02FDCEFB0002B9364 /* GhosttyKit.xcframework */; };
+		BDA2E8B22FDE4200002B9364 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = BDA2E8B12FDE4200002B9364 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,7 @@
 		BDA2E8A32FDCEFB0002B9364 /* Exceptions for "PathDeck" folder in "PathDeck" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				ChangeJournal/AGENTS.md,
 				FileWorkspace/AGENTS.md,
 				Terminal/AGENTS.md,
 			);
@@ -72,6 +74,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BDA2E8A12FDCEFB0002B9364 /* GhosttyKit.xcframework in Frameworks */,
+				BDA2E8B22FDE4200002B9364 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -141,6 +144,7 @@
 			);
 			name = PathDeck;
 			packageProductDependencies = (
+				BDA2E8B12FDE4200002B9364 /* GRDB */,
 			);
 			productName = PathDeck;
 			productReference = BDA2E86F2FDCEFAF002B9364 /* PathDeck.app */;
@@ -224,6 +228,9 @@
 			);
 			mainGroup = BDA2E8662FDCEFAF002B9364;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BDA2E8702FDCEFAF002B9364 /* Products */;
 			projectDirPath = "";
@@ -634,6 +641,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BDA2E8B12FDE4200002B9364 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = BDA2E8672FDCEFAF002B9364 /* Project object */;
 }

@@ -46,12 +46,13 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-首个业务模块 `FileWorkspace` 已落地（S1 文件浏览）。
+首个业务模块 `FileWorkspace` 已落地（S1 文件浏览）；`ChangeJournal` 已落地（S3 FSEvents + SQLite）。
 
 ```
 PathDeck/                  App 源码
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图），见其 AGENTS.md
 PathDeck/Terminal/         内嵌 libghostty 真终端模块（S2 冒烟），见其 AGENTS.md
+PathDeck/ChangeJournal/    文件变化感知与记录模块（FSEvents + SQLite），见其 AGENTS.md
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
@@ -62,7 +63,7 @@ docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需
 design/                    设计稿源文件（standalone HTML，可浏览器打开看可视参考），不进 build
 ```
 
-规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `ChangeJournal` / `Extensions`（`FileWorkspace`、`Terminal` 已落地）。
+规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal`、`ChangeJournal` 已落地）。
 
 ## 常用命令
 
@@ -149,3 +150,4 @@ xcodebuild -deleteComponent MetalToolchain
 - 2026-06-13 调研 cmux（Swift+Ghostty，与 PathDeck 同栈）+ con-terminal（Rust+同一套 libghostty C API）两生产项目的宿主集成实现，实证嵌入路径可行；据此修正集成方式（`-lstdc++`→`-lc++`+frameworks、`@import GhosttyKit` module 桥接、**宿主不调 `ghostty_surface_draw`**（Ghostty 内部 CVDisplayLink 自驱）、`read_clipboard_cb` importer 陷阱、surface 须挂 window 后再建、xcframework 不含 zig-out 资源）；产出 S2 冒烟计划 `docs/plans/2026-06-13-s2-libghostty-smoke.md`。
 - 2026-06-13 从 `design/` 两份 standalone 设计稿（设计系统 + 交互原型）抽取 `docs/design.md`（UI 视觉权威参考）；交叉核验 metrics/色值/布局后定稿。
 - 2026-06-13 S2 libghostty 嵌入冒烟落地：新增 `Terminal` 模块（`GhosttyApp`/`GhosttySurfaceView`/`TerminalSmokeView` + ⌃⌥⌘T 独立终端窗口）；pbxproj 链接 `GhosttyKit.xcframework` + 生产 LDFLAGS + `membershipExceptions` 排除各 `AGENTS.md` 出 bundle resource（修同名 resource 冲突）。Debug/Release clean build + 链接单测（`GhosttyLinkTests`）通过，证明自构建 xcframework 符号完整、`read_clipboard_cb` 实测导入为 `Bool`。渲染 + `echo`/`ls` 键盘回显 GUI 走查通过——**产品最脆弱假设（libghostty 能嵌入跑 PTY）证实，主路成立，不启用 SwiftTerm fallback**。
+- 2026-06-14 S3 FSEvents + SQLite 事件写入落地：新增 `ChangeJournal` 模块（`ChangeEvent`/`ChangeStore`/`FSWatcher`/`ChangeListView`）；引入 GRDB.swift 7.11.0（SPM）；SQLite 模式 WAL + `synchronous=NORMAL` + `busy_timeout=5s` + `auto_vacuum=INCREMENTAL`；FSEvents 用 `kFSEventStreamCreateFlagFileEvents` 逐文件粒度，事件分类用 flag 组合 + 文件存在性兜底；`ContentView` 底部固定 180pt 变化列表面板。Debug/Release clean build + 5 个 ChangeStoreTests 通过。**M0 三项验收标准全部达成**。
