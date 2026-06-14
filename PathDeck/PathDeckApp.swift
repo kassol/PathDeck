@@ -37,12 +37,36 @@ private struct TerminalCommands: Commands {
     }
 }
 
-/// 文件操作菜单命令：移到废纸篓 + 新建文件夹。
+/// 文件操作菜单命令：打开文件夹 + 最近打开 + 新建文件夹 + 废纸篓。
 private struct FileCommands: Commands {
     @FocusedValue(\.workspaceModel) private var model
 
     var body: some Commands {
-        CommandGroup(after: .newItem) {
+        CommandGroup(replacing: .newItem) {
+            Button("打开文件夹…") {
+                model?.openFolder()
+            }
+            .keyboardShortcut("o")
+
+            Menu("打开最近文件夹") {
+                let recent = RecentFolders.shared.items
+                if recent.isEmpty {
+                    Text("无最近记录")
+                } else {
+                    ForEach(recent, id: \.self) { url in
+                        Button(abbreviatedPath(url)) {
+                            model?.navigate(to: url)
+                        }
+                    }
+                    Divider()
+                    Button("清除菜单") {
+                        RecentFolders.shared.clear()
+                    }
+                }
+            }
+
+            Divider()
+
             Button("新建文件夹") {
                 model?.newFolder()
             }
@@ -56,6 +80,10 @@ private struct FileCommands: Commands {
             .disabled(model?.selectedURLs.isEmpty ?? true)
         }
     }
+
+    private func abbreviatedPath(_ url: URL) -> String {
+        (url.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+    }
 }
 
 /// 显示菜单命令：隐藏文件切换 + 复制路径。
@@ -68,6 +96,12 @@ private struct ViewCommands: Commands {
                 model?.toggleHidden()
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
+        }
+        CommandGroup(replacing: .textEditing) {
+            Button("查找…") {
+                model?.isSearching = true
+            }
+            .keyboardShortcut("f")
         }
         CommandGroup(after: .pasteboard) {
             Button("复制当前路径") {

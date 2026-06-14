@@ -8,8 +8,11 @@ enum SortColumn: String {
 
 @Observable
 final class WorkspaceModel {
+    private static let lastFolderKey = "lastOpenedFolder"
+
     private(set) var currentURL: URL
     private(set) var items: [FileItem] = []
+    private(set) var allItems: [FileItem] = []
     private(set) var changes: [ChangeEvent] = []
 
     var sortColumn: SortColumn = .name
@@ -17,6 +20,10 @@ final class WorkspaceModel {
     var showHidden: Bool = false
     var selectedURLs: [URL] = []
     var pendingRenameURL: URL?
+    var isSearching: Bool = false
+    var searchQuery: String = "" {
+        didSet { applySearch() }
+    }
 
     var pathSegments: [(name: String, url: URL)] {
         var segments: [(name: String, url: URL)] = []
@@ -44,8 +51,21 @@ final class WorkspaceModel {
     private var watcher: FSWatcher?
     private var changeStore: ChangeStore?
 
-    init(root: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        currentURL = root
+    init(root: URL? = nil) {
+        if let root {
+            currentURL = root
+        } else if let saved = UserDefaults.standard.string(forKey: Self.lastFolderKey) {
+            let url = URL(fileURLWithPath: saved)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDir),
+               isDir.boolValue {
+                currentURL = url
+            } else {
+                currentURL = FileManager.default.homeDirectoryForCurrentUser
+            }
+        } else {
+            currentURL = FileManager.default.homeDirectoryForCurrentUser
+        }
 
         do {
             changeStore = try ChangeStore()
@@ -65,22 +85,31 @@ final class WorkspaceModel {
 
     func enter(_ item: FileItem) {
         guard item.isDirectory else { return }
-        currentURL = item.url
-        reload()
-        watcher?.watch(directory: currentURL)
+        navigate(to: item.url)
     }
 
     func goUp() {
         guard currentURL.path(percentEncoded: false) != "/" else { return }
-        currentURL = currentURL.deletingLastPathComponent().standardizedFileURL
-        reload()
-        watcher?.watch(directory: currentURL)
+        navigate(to: currentURL.deletingLastPathComponent())
     }
 
     func navigate(to url: URL) {
         currentURL = url.standardizedFileURL
+        searchQuery = ""
+        isSearching = false
         reload()
         watcher?.watch(directory: currentURL)
+        UserDefaults.standard.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
+    }
+
+    func openFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        navigate(to: url)
+        RecentFolders.shared.add(url)
     }
 
     func toggleHidden() {
@@ -92,7 +121,8 @@ final class WorkspaceModel {
         guard let col = SortColumn(rawValue: column) else { return }
         sortColumn = col
         sortAscending = ascending
-        items = Self.sortedItems(items, by: sortColumn, ascending: sortAscending)
+        allItems = Self.sortedItems(allItems, by: sortColumn, ascending: sortAscending)
+        applySearch()
     }
 
     func copyCurrentPath() {
@@ -150,8 +180,24 @@ final class WorkspaceModel {
 
     func reload() {
         let rawItems = (try? DirectoryLister.list(currentURL, includeHidden: showHidden)) ?? []
-        items = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
+        allItems = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
+        applySearch()
         refreshChanges()
+    }
+
+    private func applySearch() {
+        if searchQuery.isEmpty {
+            items = allItems
+        } else {
+            items = allItems.filter {
+                $0.name.localizedCaseInsensitiveContains(searchQuery)
+            }
+        }
+    }
+
+    static func filterItems(_ items: [FileItem], query: String) -> [FileItem] {
+        if query.isEmpty { return items }
+        return items.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     static func sortedItems(_ items: [FileItem], by column: SortColumn, ascending: Bool) -> [FileItem] {

@@ -4,7 +4,7 @@
 
 ## 职责
 
-Finder-like 文件浏览：枚举目录、展示文件列表、目录进出导航。产品主心智的承载层，后续 Preview / 多视图 / 搜索 / 右键操作在此扩展。
+Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder）、Quick Look 预览、打开任意文件夹、文件名搜索。后续扩展：多视图模式、Sidebar、内容搜索。
 
 ## 目录结构
 
@@ -12,8 +12,10 @@ Finder-like 文件浏览：枚举目录、展示文件列表、目录进出导�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）（MainActor）。`SortColumn` 枚举、`sortedItems` 静态排序方法 |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤（`searchQuery`/`isSearching`/`applySearch`/`filterItems`）+ 打开文件夹（`openFolder`）。`SortColumn` 枚举、`sortedItems` 静态排序方法 |
 | `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look 预览（QLPreviewPanel 所有权 + 数据源） |
+| `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
+| `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
 
 ## 模块规范
 
@@ -24,11 +26,12 @@ Finder-like 文件浏览：枚举目录、展示文件列表、目录进出导�
 
 ## 依赖关系
 
-- 依赖：Foundation、AppKit、SwiftUI、Observation、QuickLookUI。
+- 依赖：Foundation、AppKit、SwiftUI、Observation、QuickLookUI、UniformTypeIdentifiers。
 - 被依赖：`ContentView` 装载 `FileTableView` 与 `WorkspaceModel`。
 
 ## 变更日志
 
+- 2026-06-14 S7 打开任意文件夹 + 文件名搜索（M1 收尾）：⌘O 打开文件夹（NSOpenPanel）+ Open Recent 菜单（RecentFolders，UserDefaults 持久化，10 项上限）+ 启动恢复上次目录（`lastOpenedFolder`）+ 拖放文件夹到窗口（`.onDrop` + UTType.fileURL）+ ⌘F 搜索栏（NSSearchField，SearchBarView）+ 文件名实时过滤（`localizedCaseInsensitiveContains`，`allItems` → `applySearch()` → `items`）+ Esc 关闭搜索。FileCommands 改为 `replacing: .newItem`（合并 Open + New Folder）；ViewCommands 添加 `replacing: .textEditing`（⌘F）。10 个新单测（RecentFolders×4 + SearchFilter×6），56 个总计全通过。
 - 2026-06-14 S4 路径导航 + 排序 + 隐藏文件：路径面包屑栏（可点击段跳转）+ NSTableView 四列列头排序（目录始终在前）+ ⌘⇧. 隐藏文件切换 + ⌘⌥C 复制当前路径。排序职责从 DirectoryLister 移至 WorkspaceModel（`sortedItems` 静态方法）。FocusedValue 用 `@Entry` 宏（macOS 26 SDK）。
 - 2026-06-14 S5 右键菜单 + 文件操作落地：NSMenu 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Trash（⌘⌫）/Rename（Enter 触发 inline editing，`doCommandBy:` 拦截 Esc 取消）/New Folder（⌘⇧N + 自动 rename）/Reveal in Finder/Copy Path。FileNSTableView 子类拦截 Return 键；`menu.autoenablesItems = false`；编辑中跳过 `reloadData()`；`clickedRow` 越界保护。
 - 2026-06-14 S6 Quick Look 预览：空格键 toggle `QLPreviewPanel`；`FileNSTableView` 持有 QL 所有权；`Coordinator` 实现 `QLPreviewPanelDataSource`+`Delegate`；`handle` 只转发↑↓箭头 + 显式处理空格关闭。`updateNSView` 加 `itemsChanged` 守卫防止无关 `@Observable` 状态变化触发 `reloadData()` 破坏 QL 面板。

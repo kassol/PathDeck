@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension FocusedValues {
     @Entry var workspaceModel: WorkspaceModel?
@@ -11,6 +12,23 @@ struct ContentView: View {
         VStack(spacing: 0) {
             PathBarView(segments: model.pathSegments) { url in
                 model.navigate(to: url)
+            }
+
+            if model.isSearching {
+                Divider()
+                SearchBarView(
+                    query: Binding(
+                        get: { model.searchQuery },
+                        set: { model.searchQuery = $0 }
+                    ),
+                    onDismiss: {
+                        model.isSearching = false
+                        model.searchQuery = ""
+                    }
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.bar)
             }
 
             Divider()
@@ -65,6 +83,20 @@ struct ContentView: View {
             }
         }
         .focusedSceneValue(\.workspaceModel, model)
+        .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+                      isDir.boolValue else { return }
+                DispatchQueue.main.async {
+                    model.navigate(to: url)
+                    RecentFolders.shared.add(url)
+                }
+            }
+            return true
+        }
     }
 }
 

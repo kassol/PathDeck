@@ -46,7 +46,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-首个业务模块 `FileWorkspace` 已落地（S1 文件浏览）；`ChangeJournal` 已落地（S3 FSEvents + SQLite）。
+`FileWorkspace` 已完成 M1 全部 scope（S1 文件浏览 → S7 打开文件夹 + 搜索）；`ChangeJournal` 已落地（S3 FSEvents + SQLite）；`Terminal` 已完成 S2 冒烟。下一阶段 M2（Terminal 融合 MVP）。
 
 ```
 PathDeck/                  App 源码
@@ -154,3 +154,4 @@ xcodebuild -deleteComponent MetalToolchain
 - 2026-06-14 S3 FSEvents + SQLite 事件写入落地：新增 `ChangeJournal` 模块（`ChangeEvent`/`ChangeStore`/`FSWatcher`/`ChangeListView`）；引入 GRDB.swift 7.11.0（SPM）；SQLite 模式 WAL + `synchronous=NORMAL` + `busy_timeout=5s` + `auto_vacuum=INCREMENTAL`；FSEvents 用 `kFSEventStreamCreateFlagFileEvents` 逐文件粒度，事件分类用 flag 组合 + 文件存在性兜底；`ContentView` 底部固定 180pt 变化列表面板。Debug/Release clean build + 5 个 ChangeStoreTests 通过。**M0 三项验收标准全部达成**。
 - 2026-06-14 S5 右键菜单 + 文件操作落地（M1 第二切片）：NSTableView 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Move to Trash（⌘⌫）/Rename（Enter 触发 inline editing，Esc 取消）/New Folder（⌘⇧N，创建后自动进入重命名）/Reveal in Finder/Copy Path。`FileNSTableView` 子类处理 Return 键；`Coordinator` 实现 `NSMenuDelegate` + `NSTextFieldDelegate` + `doCommandBy:` 拦截 Esc；`WorkspaceModel` 新增 `selectedURLs`/`pendingRenameURL` + 文件操作方法（`trashItems`/`renameItem`/`newFolder`）；双击文件改为用默认应用打开。修复：FSWatcher 加 `kFSEventStreamEventFlagItemIsDir` 处理（目录事件此前被过滤）；`menu.autoenablesItems = false`（多选时重命名正确灰掉）；编辑中跳过 `reloadData()`；`menuNeedsUpdate` 加 `clickedRow` 越界保护；⌘⌫ 改为独立 CommandMenu（原 `replacing: .undoRedo` 吞掉了 Edit 菜单的 Undo/Redo）。Debug/Release build + 46 个单测通过（新增 FSWatcherClassify×8 + WorkspaceModelFileOps×19 + newFolderName×4）。
 - 2026-06-14 S6 Quick Look 预览落地（M1 第三切片）：空格键触发 `QLPreviewPanel`（打开/关闭切换）；`FileNSTableView` 实现 QL 所有权协议（`acceptsPreviewPanelControl`/`beginPreviewPanelControl`/`endPreviewPanelControl`）；`Coordinator` 遵循 `QLPreviewPanelDataSource`（基于选中文件提供 items，多选支持翻页）+ `QLPreviewPanelDelegate`（源 frame 动画锚定名称列单元格）；`handle` 只转发上下箭头 + 显式处理空格关闭（不能转发所有键盘事件回 table view，否则空格 keyUp 重新触发关闭）；选中文件切换时 QL 面板 `reloadData()`。`updateNSView` 加 `itemsChanged` 守卫——`@Observable` 任意属性变化都会触发 `updateNSView`，无条件 `reloadData()` 会破坏 QLPreviewPanel responder chain。仅改动 `FileTableView.swift`，~80 行。Debug/Release build + 46 个单测通过。
+- 2026-06-14 S7 打开任意文件夹 + 文件名搜索落地（M1 收尾切片）：⌘O 打开文件夹（NSOpenPanel）+ Open Recent 菜单（`RecentFolders`，UserDefaults 持久化，10 项上限去重）+ 启动恢复上次目录（`lastOpenedFolder`）+ 拖放文件夹到窗口（`.onDrop` + `UTType.fileURL`）+ ⌘F 搜索栏（`SearchBarView` 包装 `NSSearchField`）+ 文件名实时过滤（`localizedCaseInsensitiveContains`，`allItems` → `applySearch()` → `items`）+ Esc 关闭搜索并恢复完整列表。`FileCommands` 改为 `replacing: .newItem`；`ViewCommands` 添加 `replacing: .textEditing`（⌘F）。新增 `RecentFolders.swift` + `SearchBarView.swift`。Debug/Release clean build + 56 个单测通过（新增 RecentFolders×4 + SearchFilter×6）。**M1 全部 scope 闭合**。
