@@ -4,17 +4,19 @@
 
 ## 职责
 
-把 libghostty（`vendor/GhosttyKit.xcframework`）嵌进 `NSView` 跑真 PTY shell。
-当前是 **S2 冒烟切片**：验证「我们自构建的 xcframework 能缝进 AppKit 渲染 + 键盘回显」。
-完整终端（resize / 复制粘贴 / 选区 / IME / 完整键映射）属 M1。
+把 libghostty（`vendor/GhosttyKit.xcframework`）嵌进 `NSView` 跑真 PTY shell，并通过 `TerminalEngine` 协议向业务层暴露。
+S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部面板。完整终端（resize / 复制粘贴 / 选区 / IME / 完整键映射）属后续切片。
 
 ## 目录结构
 
+- `TerminalEngine.swift` — 协议定义：`makeTerminalView(cwd:) -> NSView`，业务层唯一依赖
+- `GhosttyTerminalEngine.swift` — 协议实现：包装 `GhosttySurfaceView`，设置 `initialCwd`
+- `TerminalPanelView.swift` — `NSViewRepresentable`，只依赖 `TerminalEngine` 协议，供主窗口底部面板
 - `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + 6 个 runtime callbacks + `wakeup`→合并主队列 `app_tick`
-- `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发
-- `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载
+- `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置
+- `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载（S2 遗留，保留作调试入口）
 
-入口：`PathDeckApp` 的 `Window("Terminal (Smoke)", id: "terminal-smoke")` + ⌃⌥⌘T 菜单命令。
+入口：主窗口底部 Terminal Panel（⌃\` 或 Toolbar 按钮切换）；独立冒烟窗口（⌃⌥⌘T）。
 
 ## 构建前置
 
@@ -24,7 +26,7 @@
 
 ## 模块规范
 
-- **本模块当前是 spike**：直连 libghostty C 符号，未抽象 `TerminalEngine` 协议（决策 D-S2-2）。M1 接入文件工作台时按 con-terminal 实证分层补协议（只暴露平台无关语义，NSView 创建/backing 同步收进实现内）；届时业务层禁止直接散用 C 符号（根 AGENTS.md 约束）。
+- **协议已补齐（S8）**：业务层（`ContentView` 等）只依赖 `TerminalEngine` 协议，不 `import GhosttyKit`。libghostty C 符号限于 `GhosttyApp.swift` 和 `GhosttySurfaceView.swift` 内部。`GhosttyTerminalEngine` 是唯一桥接点——后续切换到 SwiftTerm 只需新增一个 `SwiftTermEngine` 实现。
 - 渲染由 libghostty 内部 CVDisplayLink 自驱，**本模块从不调 `ghostty_surface_draw`**。宿主义务：`CAMetalLayer`-backed NSView + `set_display_id` + 创建/resize 后 `refresh` + `wakeup`→主队列 `app_tick`。
 - surface 必须在 view 挂上 window 后再建（gate `window != nil`），否则黑屏。
 - runtime callbacks 是 `@convention(c)`；app 级 userdata = `GhosttyApp`（`passUnretained`）。surface 级回调（剪贴板/关闭）冒烟 no-op。
@@ -33,7 +35,7 @@
 
 ## 依赖关系
 
-依赖 GhosttyKit（vendor xcframework）；被 `PathDeckApp` 引用（终端窗口 scene）。与 `FileWorkspace` 无相互依赖。
+依赖 GhosttyKit（vendor xcframework）；被 `ContentView`（终端面板）和 `PathDeckApp`（冒烟窗口）引用。`ContentView` 通过 `TerminalEngine` 协议间接依赖，不直接 `import GhosttyKit`。
 
 ## 验证
 
@@ -43,3 +45,4 @@
 ## 变更日志
 
 - 2026-06-13 S2 落地：libghostty 嵌入冒烟（`GhosttyApp` / `GhosttySurfaceView` / `TerminalSmokeView` + 独立终端窗口）。Debug/Release clean build + 链接单测通过；GUI 走查（渲染 + `echo`/`ls` 回显）通过，最脆弱假设证实、不启用 SwiftTerm fallback。实测本 xcframework 符号完整、`read_clipboard_cb` 正确导入为 `Bool`（无需 cmux 的 `unsafeBitCast` 兼容）。pbxproj 用 `membershipExceptions` 排除 `AGENTS.md` 出 bundle resource。
+- 2026-06-14 S8 落地：`TerminalEngine` 协议 + `GhosttyTerminalEngine` 实现 + `TerminalPanelView`（主窗口底部面板）。`GhosttySurfaceView` 新增 `initialCwd` 属性。⌃\` / Toolbar 按钮切换面板；可拖拽分割线调整高度；展开时隐藏「最近变化」。终端 view 始终在 tree 中（`frame(height:0)+clipped` 隐藏，避免 shell 会话丢失）；分割线用 `coordinateSpace` + `location` 定位（消除拖拽闪烁）。冒烟窗口保留。Debug/Release build + 56 个单测通过。

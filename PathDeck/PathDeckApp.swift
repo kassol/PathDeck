@@ -26,9 +26,17 @@ struct PathDeckApp: App {
 /// 终端冒烟窗口的菜单命令（⌃⌥⌘T 打开）。
 private struct TerminalCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.workspaceModel) private var model
 
     var body: some Commands {
         CommandMenu("终端") {
+            Button("切换终端面板") {
+                model?.isTerminalVisible.toggle()
+            }
+            .keyboardShortcut("`", modifiers: .control)
+
+            Divider()
+
             Button("打开终端（冒烟）") {
                 openWindow(id: PathDeckApp.terminalWindowID)
             }

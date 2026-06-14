@@ -21,6 +21,7 @@ final class WorkspaceModel {
     var selectedURLs: [URL] = []
     var pendingRenameURL: URL?
     var isSearching: Bool = false
+    var isTerminalVisible: Bool = false
     var searchQuery: String = "" {
         didSet { applySearch() }
     }

@@ -15,6 +15,7 @@ import Metal
 /// ① 提供 `CAMetalLayer` backing；② surface 生命周期与尺寸/缩放/display 同步；
 /// ③ 转发键盘事件。本视图从不调用 `ghostty_surface_draw`。详见 `Terminal/AGENTS.md`。
 final class GhosttySurfaceView: NSView {
+    var initialCwd: URL?
     private var surface: ghostty_surface_t?
 
     override init(frame frameRect: NSRect) {
@@ -108,12 +109,12 @@ final class GhosttySurfaceView: NSView {
 
         // 嵌套 withCString 保证所有 C 指针在 ghostty_surface_new 调用期间有效。
         // env 注入 TERM=xterm-256color 规避缺失的 xterm-ghostty terminfo（决策 D-S2-1）。
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let cwdPath = (initialCwd ?? FileManager.default.homeDirectoryForCurrentUser).path
         "TERM".withCString { termKey in
             "xterm-256color".withCString { termValue in
                 var envVars = [ghostty_env_var_s(key: termKey, value: termValue)]
-                home.withCString { cHome in
-                    config.working_directory = cHome
+                cwdPath.withCString { cCwd in
+                    config.working_directory = cCwd
                     envVars.withUnsafeMutableBufferPointer { buffer in
                         config.env_vars = buffer.baseAddress
                         config.env_var_count = buffer.count
