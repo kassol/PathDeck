@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -53,6 +54,7 @@ struct FileTableView: NSViewRepresentable {
 
         tableView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
         tableView.setAccessibilityIdentifier("fileTable")
+        tableView.coordinator = context.coordinator
         context.coordinator.tableView = tableView
 
         let scrollView = NSScrollView()
@@ -64,6 +66,7 @@ struct FileTableView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let coord = context.coordinator
+        let itemsChanged = coord.items != items
         coord.items = items
         coord.onOpen = onOpen
         coord.onSort = onSort
@@ -73,7 +76,7 @@ struct FileTableView: NSViewRepresentable {
         coord.onNewFolder = onNewFolder
 
         guard let tv = nsView.documentView as? NSTableView else { return }
-        if coord.editingRow < 0 {
+        if coord.editingRow < 0, itemsChanged {
             tv.reloadData()
         }
 
@@ -91,24 +94,47 @@ struct FileTableView: NSViewRepresentable {
         }
     }
 
-    // MARK: - Custom NSTableView for key events
+    // MARK: - Custom NSTableView for key events + Quick Look ownership
 
     final class FileNSTableView: NSTableView {
         var onReturnKey: ((Int) -> Void)?
+        weak var coordinator: Coordinator?
 
         override func keyDown(with event: NSEvent) {
             if event.keyCode == 36, selectedRow >= 0 {
                 onReturnKey?(selectedRow)
+            } else if event.keyCode == 49 {
+                if QLPreviewPanel.sharedPreviewPanelExists(),
+                   let panel = QLPreviewPanel.shared(), panel.isVisible {
+                    panel.orderOut(nil)
+                } else {
+                    QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+                }
             } else {
                 super.keyDown(with: event)
             }
+        }
+
+        override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool {
+            true
+        }
+
+        override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+            panel.dataSource = coordinator
+            panel.delegate = coordinator
+        }
+
+        override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+            panel.dataSource = nil
+            panel.delegate = nil
         }
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate,
-                             NSMenuDelegate, NSTextFieldDelegate {
+                             NSMenuDelegate, NSTextFieldDelegate,
+                             QLPreviewPanelDataSource, QLPreviewPanelDelegate {
         static let nameColumn = "name"
         static let dateColumn = "date"
         static let sizeColumn = "size"
@@ -199,6 +225,11 @@ struct FileTableView: NSViewRepresentable {
                 row < items.count ? items[row] : nil
             }
             onSelectionChange(selected)
+
+            if QLPreviewPanel.sharedPreviewPanelExists(),
+               let panel = QLPreviewPanel.shared(), panel.isVisible {
+                panel.reloadData()
+            }
         }
 
         // MARK: - Double Click
@@ -391,6 +422,45 @@ struct FileTableView: NSViewRepresentable {
             if !onRename(oldItem.url, newName) {
                 textField.stringValue = oldItem.name
             }
+        }
+
+        // MARK: - Quick Look
+
+        func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+            selectedURLs().count
+        }
+
+        func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+            let urls = selectedURLs()
+            guard index < urls.count else { return nil }
+            return urls[index] as NSURL
+        }
+
+        func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
+            guard event.type == .keyDown else { return false }
+            let kc = event.keyCode
+            if kc == 49 {
+                panel.orderOut(nil)
+                return true
+            }
+            if kc == 126 || kc == 125 {
+                tableView?.keyDown(with: event)
+                return true
+            }
+            return false
+        }
+
+        func previewPanel(_ panel: QLPreviewPanel!,
+                          sourceFrameOnScreenFor item: any QLPreviewItem) -> NSRect {
+            guard let tv = tableView,
+                  let url = (item as? NSURL) as URL?,
+                  let row = items.firstIndex(where: { $0.url == url }) else { return .zero }
+            let nameColIndex = tv.column(
+                withIdentifier: NSUserInterfaceItemIdentifier(Self.nameColumn))
+            guard nameColIndex >= 0 else { return .zero }
+            let cellRect = tv.frameOfCell(atColumn: nameColIndex, row: row)
+            let windowRect = tv.convert(cellRect, to: nil)
+            return tv.window?.convertToScreen(windowRect) ?? .zero
         }
 
         // MARK: - Cell Factory
