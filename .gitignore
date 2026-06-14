@@ -12,3 +12,6 @@ vendor/*.xcframework
 
 # Test coverage raw profiles
 *.profraw
+
+# design screenshots (transient)
+design/.shots/

@@ -57,7 +57,9 @@ PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
 vendor/                    第三方二进制（GhosttyKit.xcframework，不进 git，按 libghostty recipe 重建）
 docs/prd.md                产品需求文档（权威产品定义）
+docs/design.md             UI 设计系统与原型参考（视觉权威，从 design/ 设计稿抽取）
 docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需求一份
+design/                    设计稿源文件（standalone HTML，可浏览器打开看可视参考），不进 build
 ```
 
 规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `ChangeJournal` / `Extensions`（`FileWorkspace`、`Terminal` 已落地）。
@@ -145,4 +147,5 @@ xcodebuild -deleteComponent MetalToolchain
 - 2026-06-13 验证 libghostty 可在本机 macOS 26.5 构建（攻克 zig 0.15.2 × Xcode 26.4+ 的 arm64e tbd 链接死结，改用 Homebrew patched zig）；产出 `vendor/GhosttyKit.xcframework`（arm64 Release strip，~23MB），固化重建 recipe；临时构建工具链（zig/llvm@20/lld@20/Metal Toolchain）已清理。
 - 2026-06-13 S1 文件浏览切片落地：新增 `FileWorkspace` 模块（启动即家目录的 `NSTableView` 文件列表 + 双击进入 / ⌘↑ 返回上级）；关闭 App Sandbox 落实 D1（移除 `ENABLE_USER_SELECTED_FILES`）；建立 `docs/plans/` 计划目录（按日期 + 需求名命名）。
 - 2026-06-13 调研 cmux（Swift+Ghostty，与 PathDeck 同栈）+ con-terminal（Rust+同一套 libghostty C API）两生产项目的宿主集成实现，实证嵌入路径可行；据此修正集成方式（`-lstdc++`→`-lc++`+frameworks、`@import GhosttyKit` module 桥接、**宿主不调 `ghostty_surface_draw`**（Ghostty 内部 CVDisplayLink 自驱）、`read_clipboard_cb` importer 陷阱、surface 须挂 window 后再建、xcframework 不含 zig-out 资源）；产出 S2 冒烟计划 `docs/plans/2026-06-13-s2-libghostty-smoke.md`。
+- 2026-06-13 从 `design/` 两份 standalone 设计稿（设计系统 + 交互原型）抽取 `docs/design.md`（UI 视觉权威参考）；交叉核验 metrics/色值/布局后定稿。
 - 2026-06-13 S2 libghostty 嵌入冒烟落地：新增 `Terminal` 模块（`GhosttyApp`/`GhosttySurfaceView`/`TerminalSmokeView` + ⌃⌥⌘T 独立终端窗口）；pbxproj 链接 `GhosttyKit.xcframework` + 生产 LDFLAGS + `membershipExceptions` 排除各 `AGENTS.md` 出 bundle resource（修同名 resource 冲突）。Debug/Release clean build + 链接单测（`GhosttyLinkTests`）通过，证明自构建 xcframework 符号完整、`read_clipboard_cb` 实测导入为 `Bool`。渲染 + `echo`/`ls` 键盘回显 GUI 走查通过——**产品最脆弱假设（libghostty 能嵌入跑 PTY）证实，主路成立，不启用 SwiftTerm fallback**。
