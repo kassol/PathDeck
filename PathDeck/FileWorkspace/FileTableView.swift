@@ -13,6 +13,7 @@ struct FileTableView: NSViewRepresentable {
     var onRename: (URL, String) -> Bool
     var onNewFolder: () -> Void
     var onClearPendingRename: () -> Void
+    var onSendPathToTerminal: ([URL]) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -74,6 +75,7 @@ struct FileTableView: NSViewRepresentable {
         coord.onTrash = onTrash
         coord.onRename = onRename
         coord.onNewFolder = onNewFolder
+        coord.onSendPathToTerminal = onSendPathToTerminal
 
         guard let tv = nsView.documentView as? NSTableView else { return }
         if coord.editingRow < 0, itemsChanged {
@@ -147,6 +149,7 @@ struct FileTableView: NSViewRepresentable {
         var onTrash: () -> Void
         var onRename: (URL, String) -> Bool
         var onNewFolder: () -> Void
+        var onSendPathToTerminal: ([URL]) -> Void
         weak var tableView: NSTableView?
 
         var editingRow: Int = -1
@@ -171,6 +174,7 @@ struct FileTableView: NSViewRepresentable {
             self.onTrash = parent.onTrash
             self.onRename = parent.onRename
             self.onNewFolder = parent.onNewFolder
+            self.onSendPathToTerminal = parent.onSendPathToTerminal
         }
 
         // MARK: - DataSource
@@ -287,6 +291,8 @@ struct FileTableView: NSViewRepresentable {
             addMenuItem(to: menu, title: "在 Finder 中显示",
                         action: #selector(menuRevealInFinder(_:)))
             addMenuItem(to: menu, title: "复制路径", action: #selector(menuCopyPath(_:)))
+            addMenuItem(to: menu, title: "发送路径到终端",
+                        action: #selector(menuSendPathToTerminal(_:)))
 
             menu.addItem(.separator())
 
@@ -360,6 +366,12 @@ struct FileTableView: NSViewRepresentable {
         }
 
         @objc private func menuNewFolder(_ sender: Any?) { onNewFolder() }
+
+        @objc private func menuSendPathToTerminal(_ sender: Any?) {
+            let urls = selectedURLs()
+            guard !urls.isEmpty else { return }
+            onSendPathToTerminal(urls)
+        }
 
         private func selectedURLs() -> [URL] {
             guard let tv = tableView else { return [] }

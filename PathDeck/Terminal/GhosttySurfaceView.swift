@@ -154,6 +154,16 @@ final class GhosttySurfaceView: NSView {
         Double(window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
     }
 
+    // MARK: - Text Injection
+
+    func insertText(_ text: String) {
+        guard let surface else { return }
+        let utf8 = Array(text.utf8)
+        utf8.withUnsafeBufferPointer { buffer in
+            ghostty_surface_text(surface, buffer.baseAddress, UInt(buffer.count))
+        }
+    }
+
     // MARK: - 键盘（冒烟最小回显路径）
 
     override func keyDown(with event: NSEvent) {

@@ -23,10 +23,11 @@ struct PathDeckApp: App {
     }
 }
 
-/// 终端冒烟窗口的菜单命令（⌃⌥⌘T 打开）。
+/// 终端菜单命令。
 private struct TerminalCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.workspaceModel) private var model
+    @FocusedValue(\.sendPathAction) private var sendPathAction
 
     var body: some Commands {
         CommandMenu("终端") {
@@ -34,6 +35,13 @@ private struct TerminalCommands: Commands {
                 model?.isTerminalVisible.toggle()
             }
             .keyboardShortcut("`", modifiers: .control)
+
+            Button("发送路径到终端") {
+                guard let urls = model?.selectedURLs, !urls.isEmpty else { return }
+                sendPathAction?(urls)
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(model?.selectedURLs.isEmpty ?? true)
 
             Divider()
 

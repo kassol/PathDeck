@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 extension FocusedValues {
     @Entry var workspaceModel: WorkspaceModel?
+    @Entry var sendPathAction: (([URL]) -> Void)?
 }
 
 struct ContentView: View {
@@ -53,7 +54,10 @@ struct ContentView: View {
                     onTrash: { model.trashItems() },
                     onRename: { model.renameItem(from: $0, to: $1) },
                     onNewFolder: { model.newFolder() },
-                    onClearPendingRename: { model.pendingRenameURL = nil }
+                    onClearPendingRename: { model.pendingRenameURL = nil },
+                    onSendPathToTerminal: { urls in
+                        sendPathToTerminal(urls)
+                    }
                 )
 
                 if model.isTerminalVisible {
@@ -120,6 +124,9 @@ struct ContentView: View {
             if visible { terminalCreated = true }
         }
         .focusedSceneValue(\.workspaceModel, model)
+        .focusedSceneValue(\.sendPathAction) { urls in
+            sendPathToTerminal(urls)
+        }
         .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
@@ -133,6 +140,21 @@ struct ContentView: View {
                 }
             }
             return true
+        }
+    }
+
+    private func sendPathToTerminal(_ urls: [URL]) {
+        let escaped = ShellEscape.escapeMultiple(
+            urls.map { $0.path(percentEncoded: false) }
+        )
+        if model.isTerminalVisible {
+            terminalEngine.writeText(escaped)
+        } else {
+            model.isTerminalVisible = true
+            terminalCreated = true
+            DispatchQueue.main.async {
+                terminalEngine.writeText(escaped)
+            }
         }
     }
 }
