@@ -17,10 +17,18 @@ struct ContentView: View {
 
             FileTableView(
                 items: model.items,
+                pendingRenameURL: model.pendingRenameURL,
                 onOpen: { model.enter($0) },
                 onSort: { column, ascending in
                     model.applySort(column: column, ascending: ascending)
-                }
+                },
+                onSelectionChange: { items in
+                    model.selectedURLs = items.map(\.url)
+                },
+                onTrash: { model.trashItems() },
+                onRename: { model.renameItem(from: $0, to: $1) },
+                onNewFolder: { model.newFolder() },
+                onClearPendingRename: { model.pendingRenameURL = nil }
             )
 
             Divider()
@@ -92,5 +100,6 @@ private struct PathBarView: View {
         }
         .frame(height: 24)
         .background(.bar)
+        .accessibilityIdentifier("pathBar")
     }
 }

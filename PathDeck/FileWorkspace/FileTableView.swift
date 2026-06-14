@@ -1,17 +1,24 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FileTableView: NSViewRepresentable {
     var items: [FileItem]
+    var pendingRenameURL: URL?
     var onOpen: (FileItem) -> Void
     var onSort: (String, Bool) -> Void
+    var onSelectionChange: ([FileItem]) -> Void
+    var onTrash: () -> Void
+    var onRename: (URL, String) -> Bool
+    var onNewFolder: () -> Void
+    var onClearPendingRename: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(items: items, onOpen: onOpen, onSort: onSort)
+        Coordinator(parent: self)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let tableView = NSTableView()
+        let tableView = FileNSTableView()
         tableView.dataSource = context.coordinator
         tableView.delegate = context.coordinator
         tableView.usesAlternatingRowBackgroundColors = true
@@ -20,6 +27,15 @@ struct FileTableView: NSViewRepresentable {
         tableView.style = .inset
         tableView.target = context.coordinator
         tableView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
+        let coordinator = context.coordinator
+        tableView.onReturnKey = { [weak coordinator] row in
+            coordinator?.beginRename(row: row)
+        }
+
+        let menu = NSMenu()
+        menu.delegate = context.coordinator
+        menu.autoenablesItems = false
+        tableView.menu = menu
 
         let columns: [(id: String, title: String, width: CGFloat)] = [
             (Coordinator.nameColumn, "名称", 280),
@@ -36,7 +52,7 @@ struct FileTableView: NSViewRepresentable {
         }
 
         tableView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
-
+        tableView.setAccessibilityIdentifier("fileTable")
         context.coordinator.tableView = tableView
 
         let scrollView = NSScrollView()
@@ -47,13 +63,52 @@ struct FileTableView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
-        context.coordinator.items = items
-        context.coordinator.onOpen = onOpen
-        context.coordinator.onSort = onSort
-        (nsView.documentView as? NSTableView)?.reloadData()
+        let coord = context.coordinator
+        coord.items = items
+        coord.onOpen = onOpen
+        coord.onSort = onSort
+        coord.onSelectionChange = onSelectionChange
+        coord.onTrash = onTrash
+        coord.onRename = onRename
+        coord.onNewFolder = onNewFolder
+
+        guard let tv = nsView.documentView as? NSTableView else { return }
+        if coord.editingRow < 0 {
+            tv.reloadData()
+        }
+
+        if let pendingURL = pendingRenameURL {
+            let itemsSnapshot = items
+            let clearPending = onClearPendingRename
+            DispatchQueue.main.async {
+                if let row = itemsSnapshot.firstIndex(where: { $0.url == pendingURL }) {
+                    tv.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    tv.scrollRowToVisible(row)
+                    coord.beginRename(row: row)
+                }
+                clearPending()
+            }
+        }
     }
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    // MARK: - Custom NSTableView for key events
+
+    final class FileNSTableView: NSTableView {
+        var onReturnKey: ((Int) -> Void)?
+
+        override func keyDown(with event: NSEvent) {
+            if event.keyCode == 36, selectedRow >= 0 {
+                onReturnKey?(selectedRow)
+            } else {
+                super.keyDown(with: event)
+            }
+        }
+    }
+
+    // MARK: - Coordinator
+
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate,
+                             NSMenuDelegate, NSTextFieldDelegate {
         static let nameColumn = "name"
         static let dateColumn = "date"
         static let sizeColumn = "size"
@@ -62,7 +117,13 @@ struct FileTableView: NSViewRepresentable {
         var items: [FileItem]
         var onOpen: (FileItem) -> Void
         var onSort: (String, Bool) -> Void
+        var onSelectionChange: ([FileItem]) -> Void
+        var onTrash: () -> Void
+        var onRename: (URL, String) -> Bool
+        var onNewFolder: () -> Void
         weak var tableView: NSTableView?
+
+        var editingRow: Int = -1
 
         private let sizeFormatter: ByteCountFormatter = {
             let formatter = ByteCountFormatter()
@@ -76,29 +137,47 @@ struct FileTableView: NSViewRepresentable {
             return formatter
         }()
 
-        init(items: [FileItem], onOpen: @escaping (FileItem) -> Void, onSort: @escaping (String, Bool) -> Void) {
-            self.items = items
-            self.onOpen = onOpen
-            self.onSort = onSort
+        init(parent: FileTableView) {
+            self.items = parent.items
+            self.onOpen = parent.onOpen
+            self.onSort = parent.onSort
+            self.onSelectionChange = parent.onSelectionChange
+            self.onTrash = parent.onTrash
+            self.onRename = parent.onRename
+            self.onNewFolder = parent.onNewFolder
         }
+
+        // MARK: - DataSource
 
         func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
-        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-            guard row < items.count, let columnId = tableColumn?.identifier.rawValue else { return nil }
+        // MARK: - Delegate
+
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?,
+                        row: Int) -> NSView? {
+            guard row < items.count,
+                  let columnId = tableColumn?.identifier.rawValue else { return nil }
             let item = items[row]
+            let isName = columnId == Self.nameColumn
             let reuseId = NSUserInterfaceItemIdentifier("cell.\(columnId)")
-            let cell = (tableView.makeView(withIdentifier: reuseId, owner: self) as? NSTableCellView)
-                ?? Self.makeCell(id: reuseId, withIcon: columnId == Self.nameColumn)
+            let cell = (tableView.makeView(withIdentifier: reuseId, owner: self)
+                            as? NSTableCellView)
+                ?? Self.makeCell(id: reuseId, withIcon: isName)
+
+            if isName {
+                cell.textField?.delegate = self
+            }
 
             switch columnId {
             case Self.nameColumn:
                 cell.imageView?.image = NSWorkspace.shared.icon(forFile: item.url.path)
                 cell.textField?.stringValue = item.name
             case Self.dateColumn:
-                cell.textField?.stringValue = item.modifiedDate.map { dateFormatter.string(from: $0) } ?? "--"
+                cell.textField?.stringValue =
+                    item.modifiedDate.map { dateFormatter.string(from: $0) } ?? "--"
             case Self.sizeColumn:
-                cell.textField?.stringValue = item.size.map { sizeFormatter.string(fromByteCount: $0) } ?? "--"
+                cell.textField?.stringValue =
+                    item.size.map { sizeFormatter.string(fromByteCount: $0) } ?? "--"
             case Self.kindColumn:
                 cell.textField?.stringValue = item.kind.isEmpty ? "--" : item.kind
             default:
@@ -107,19 +186,217 @@ struct FileTableView: NSViewRepresentable {
             return cell
         }
 
-        func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+        func tableView(_ tableView: NSTableView,
+                        sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
             guard let descriptor = tableView.sortDescriptors.first,
                   let key = descriptor.key else { return }
             onSort(key, descriptor.ascending)
         }
 
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard let tv = tableView else { return }
+            let selected = tv.selectedRowIndexes.compactMap { row -> FileItem? in
+                row < items.count ? items[row] : nil
+            }
+            onSelectionChange(selected)
+        }
+
+        // MARK: - Double Click
+
         @objc func handleDoubleClick(_ sender: NSTableView) {
             let row = sender.clickedRow
             guard row >= 0, row < items.count else { return }
-            onOpen(items[row])
+            let item = items[row]
+            if item.isDirectory {
+                onOpen(item)
+            } else {
+                NSWorkspace.shared.open(item.url)
+            }
         }
 
-        private static func makeCell(id: NSUserInterfaceItemIdentifier, withIcon: Bool) -> NSTableCellView {
+        // MARK: - Context Menu
+
+        func menuNeedsUpdate(_ menu: NSMenu) {
+            menu.removeAllItems()
+            guard let tv = tableView else { return }
+            let clickedRow = tv.clickedRow
+
+            if clickedRow < 0 {
+                tv.deselectAll(nil)
+                addMenuItem(to: menu, title: "新建文件夹", action: #selector(menuNewFolder(_:)))
+                return
+            }
+
+            guard clickedRow < items.count else { return }
+
+            if !tv.selectedRowIndexes.contains(clickedRow) {
+                tv.selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
+            }
+
+            let isMultiple = tv.selectedRowIndexes.count > 1
+            let item = items[clickedRow]
+
+            if !isMultiple && item.isDirectory {
+                addMenuItem(to: menu, title: "进入文件夹", action: #selector(menuOpen(_:)))
+            } else {
+                addMenuItem(to: menu, title: "打开", action: #selector(menuOpen(_:)))
+            }
+            addMenuItem(to: menu, title: "用其他应用打开…", action: #selector(menuOpenWith(_:)))
+
+            menu.addItem(.separator())
+
+            let renameItem = addMenuItem(to: menu, title: "重命名",
+                                         action: #selector(menuRename(_:)))
+            if isMultiple { renameItem.isEnabled = false }
+
+            addMenuItem(to: menu, title: "移到废纸篓", action: #selector(menuTrash(_:)))
+
+            menu.addItem(.separator())
+
+            addMenuItem(to: menu, title: "在 Finder 中显示",
+                        action: #selector(menuRevealInFinder(_:)))
+            addMenuItem(to: menu, title: "复制路径", action: #selector(menuCopyPath(_:)))
+
+            menu.addItem(.separator())
+
+            addMenuItem(to: menu, title: "新建文件夹", action: #selector(menuNewFolder(_:)))
+        }
+
+        @discardableResult
+        private func addMenuItem(to menu: NSMenu, title: String,
+                                 action: Selector) -> NSMenuItem {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            item.target = self
+            return item
+        }
+
+        // MARK: - Menu Actions
+
+        @objc private func menuOpen(_ sender: Any?) {
+            guard let tv = tableView else { return }
+            if tv.selectedRowIndexes.count <= 1 {
+                let row = tv.clickedRow
+                guard row >= 0, row < items.count else { return }
+                let item = items[row]
+                if item.isDirectory {
+                    onOpen(item)
+                } else {
+                    NSWorkspace.shared.open(item.url)
+                }
+            } else {
+                for idx in tv.selectedRowIndexes {
+                    guard idx < items.count else { continue }
+                    NSWorkspace.shared.open(items[idx].url)
+                }
+            }
+        }
+
+        @objc private func menuOpenWith(_ sender: Any?) {
+            let urls = selectedURLs()
+            guard !urls.isEmpty else { return }
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            panel.directoryURL = URL(fileURLWithPath: "/Applications")
+            panel.allowedContentTypes = [.application]
+            panel.begin { response in
+                guard response == .OK, let appURL = panel.url else { return }
+                let config = NSWorkspace.OpenConfiguration()
+                NSWorkspace.shared.open(urls, withApplicationAt: appURL, configuration: config)
+            }
+        }
+
+        @objc private func menuTrash(_ sender: Any?) { onTrash() }
+
+        @objc private func menuRename(_ sender: Any?) {
+            guard let tv = tableView, tv.selectedRow >= 0 else { return }
+            beginRename(row: tv.selectedRow)
+        }
+
+        @objc private func menuRevealInFinder(_ sender: Any?) {
+            let urls = selectedURLs()
+            guard !urls.isEmpty else { return }
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
+        }
+
+        @objc private func menuCopyPath(_ sender: Any?) {
+            let urls = selectedURLs()
+            guard !urls.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            let paths = urls.map { $0.path(percentEncoded: false) }.joined(separator: "\n")
+            NSPasteboard.general.setString(paths, forType: .string)
+        }
+
+        @objc private func menuNewFolder(_ sender: Any?) { onNewFolder() }
+
+        private func selectedURLs() -> [URL] {
+            guard let tv = tableView else { return [] }
+            return tv.selectedRowIndexes.compactMap { idx in
+                idx < items.count ? items[idx].url : nil
+            }
+        }
+
+        // MARK: - Inline Editing
+
+        func beginRename(row: Int) {
+            guard let tv = tableView, row >= 0, row < items.count else { return }
+            tv.scrollRowToVisible(row)
+            let nameColIndex = tv.column(
+                withIdentifier: NSUserInterfaceItemIdentifier(Self.nameColumn))
+            guard nameColIndex >= 0,
+                  let cellView = tv.view(atColumn: nameColIndex, row: row,
+                                         makeIfNecessary: true) as? NSTableCellView,
+                  let textField = cellView.textField else { return }
+            editingRow = row
+            textField.isEditable = true
+            textField.isSelectable = true
+            tv.window?.makeFirstResponder(textField)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView,
+                     doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                if editingRow >= 0, editingRow < items.count {
+                    (control as? NSTextField)?.stringValue = items[editingRow].name
+                }
+                (control as? NSTextField)?.isEditable = false
+                (control as? NSTextField)?.isSelectable = false
+                editingRow = -1
+                tableView?.window?.makeFirstResponder(tableView)
+                return true
+            }
+            return false
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            guard let textField = obj.object as? NSTextField else { return }
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            textField.isEditable = false
+            textField.isSelectable = false
+
+            guard editingRow >= 0, editingRow < items.count else {
+                editingRow = -1
+                return
+            }
+
+            let oldItem = items[editingRow]
+            editingRow = -1
+
+            if newName.isEmpty || newName == oldItem.name {
+                textField.stringValue = oldItem.name
+                return
+            }
+
+            if !onRename(oldItem.url, newName) {
+                textField.stringValue = oldItem.name
+            }
+        }
+
+        // MARK: - Cell Factory
+
+        private static func makeCell(id: NSUserInterfaceItemIdentifier,
+                                     withIcon: Bool) -> NSTableCellView {
             let cell = NSTableCellView()
             cell.identifier = id
 
@@ -139,7 +416,8 @@ struct FileTableView: NSViewRepresentable {
                     imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                     imageView.widthAnchor.constraint(equalToConstant: 16),
                     imageView.heightAnchor.constraint(equalToConstant: 16),
-                    textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
+                    textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor,
+                                                       constant: 4),
                     textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
                     textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                 ])

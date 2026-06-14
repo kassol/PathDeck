@@ -21,7 +21,7 @@
 - SQLite 模式：`journal_mode = WAL` + `synchronous = NORMAL` + `busy_timeout = 5s` + `auto_vacuum = INCREMENTAL`。进程 crash 不丢不坏；仅极端 OS crash 可能丢最后一个 WAL frame（对 change journal 可接受）。
 - 数据库路径：`~/Library/Application Support/in.riverflows.PathDeck/changes.db`。
 - FSWatcher 是 `nonisolated final class: @unchecked Sendable`，C 回调在后台 DispatchQueue 触发，通过 handler 闭包派发结果。调用方（`WorkspaceModel`）dispatch 到主队列后写入 ChangeStore + 刷新 UI。
-- 事件分类用 FSEvents flag 组合 + `FileManager.fileExists` ground truth 兜底。
+- 事件分类用 FSEvents flag 组合 + `FileManager.fileExists` ground truth 兜底。文件和目录事件均处理（`kFSEventStreamEventFlagItemIsFile` + `kFSEventStreamEventFlagItemIsDir`）。
 - Schema migration 由 GRDB `DatabaseMigrator` 管理，版本化、幂等。
 
 ## 依赖关系
@@ -32,4 +32,5 @@
 
 ## 变更日志
 
+- 2026-06-14 S5 修复：`handleRawEvents` 加 `kFSEventStreamEventFlagItemIsDir` 处理——目录创建/删除事件此前被 `guard isFile` 过滤掉；`classify` 从 `private` 改为 `static`（internal）以便单测。
 - 2026-06-14 S3 落地：FSEvents 监听 + SQLite 事件写入 + 变化列表 UI。

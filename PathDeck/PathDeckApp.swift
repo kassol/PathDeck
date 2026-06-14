@@ -10,6 +10,7 @@ struct PathDeckApp: App {
         }
         .commands {
             TerminalCommands()
+            FileCommands()
             ViewCommands()
         }
 
@@ -32,6 +33,27 @@ private struct TerminalCommands: Commands {
                 openWindow(id: PathDeckApp.terminalWindowID)
             }
             .keyboardShortcut("t", modifiers: [.control, .option, .command])
+        }
+    }
+}
+
+/// 文件操作菜单命令：移到废纸篓 + 新建文件夹。
+private struct FileCommands: Commands {
+    @FocusedValue(\.workspaceModel) private var model
+
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("新建文件夹") {
+                model?.newFolder()
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+        CommandMenu("文件操作") {
+            Button("移到废纸篓") {
+                model?.trashItems()
+            }
+            .keyboardShortcut(.delete, modifiers: .command)
+            .disabled(model?.selectedURLs.isEmpty ?? true)
         }
     }
 }

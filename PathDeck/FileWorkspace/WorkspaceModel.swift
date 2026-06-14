@@ -15,6 +15,8 @@ final class WorkspaceModel {
     var sortColumn: SortColumn = .name
     var sortAscending: Bool = true
     var showHidden: Bool = false
+    var selectedURLs: [URL] = []
+    var pendingRenameURL: URL?
 
     var pathSegments: [(name: String, url: URL)] {
         var segments: [(name: String, url: URL)] = []
@@ -96,6 +98,54 @@ final class WorkspaceModel {
     func copyCurrentPath() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(currentURL.path(percentEncoded: false), forType: .string)
+    }
+
+    func trashItems() {
+        for url in selectedURLs {
+            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        }
+        reload()
+    }
+
+    func renameItem(from oldURL: URL, to newName: String) -> Bool {
+        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+        if FileManager.default.fileExists(atPath: newURL.path(percentEncoded: false)) {
+            NSSound.beep()
+            return false
+        }
+        do {
+            try FileManager.default.moveItem(at: oldURL, to: newURL)
+            reload()
+            selectedURLs = [newURL]
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    func newFolder() {
+        let existingNames = Set(items.map(\.name))
+        let name = Self.newFolderName(in: existingNames)
+        let folderURL = currentURL.appendingPathComponent(name)
+        do {
+            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
+            reload()
+            selectedURLs = [folderURL]
+            pendingRenameURL = folderURL
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    static func newFolderName(in existingNames: Set<String>) -> String {
+        let baseName = "未命名文件夹"
+        if !existingNames.contains(baseName) { return baseName }
+        var counter = 2
+        while existingNames.contains("\(baseName) \(counter)") {
+            counter += 1
+        }
+        return "\(baseName) \(counter)"
     }
 
     func reload() {

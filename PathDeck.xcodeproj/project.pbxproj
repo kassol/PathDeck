@@ -229,7 +229,7 @@
 			mainGroup = BDA2E8662FDCEFAF002B9364;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BDA2E8702FDCEFAF002B9364 /* Products */;
@@ -643,7 +643,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+		BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
 			requirement = {
@@ -656,7 +656,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		BDA2E8B12FDE4200002B9364 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			package = BDA2E8B02FDE4200002B9364 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */

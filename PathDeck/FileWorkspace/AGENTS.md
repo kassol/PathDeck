@@ -12,8 +12,8 @@ Finder-like 文件浏览：枚举目录、展示文件列表、目录进出导�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items + 导航 + 排序 + 隐藏文件（MainActor）。`SortColumn` 枚举、`sortedItems` 静态排序方法 |
-| `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`，承载列表交互 |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）（MainActor）。`SortColumn` 枚举、`sortedItems` 静态排序方法 |
+| `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename |
 
 ## 模块规范
 
@@ -30,4 +30,5 @@ Finder-like 文件浏览：枚举目录、展示文件列表、目录进出导�
 ## 变更日志
 
 - 2026-06-14 S4 路径导航 + 排序 + 隐藏文件：路径面包屑栏（可点击段跳转）+ NSTableView 四列列头排序（目录始终在前）+ ⌘⇧. 隐藏文件切换 + ⌘⌥C 复制当前路径。排序职责从 DirectoryLister 移至 WorkspaceModel（`sortedItems` 静态方法）。FocusedValue 用 `@Entry` 宏（macOS 26 SDK）。
+- 2026-06-14 S5 右键菜单 + 文件操作落地：NSMenu 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Trash（⌘⌫）/Rename（Enter 触发 inline editing，`doCommandBy:` 拦截 Esc 取消）/New Folder（⌘⇧N + 自动 rename）/Reveal in Finder/Copy Path。FileNSTableView 子类拦截 Return 键；`menu.autoenablesItems = false`；编辑中跳过 `reloadData()`；`clickedRow` 越界保护。
 - 2026-06-13 S1 落地：启动即家目录的文件列表（四列元数据 + 系统图标）+ 双击进入 / ⌘↑ 返回上级。

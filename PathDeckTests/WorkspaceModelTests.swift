@@ -70,4 +70,26 @@ struct WorkspaceModelTests {
             }
         }
     }
+
+    // MARK: - New Folder Name
+
+    @Test func newFolderNameEmpty() {
+        let name = WorkspaceModel.newFolderName(in: [])
+        #expect(name == "未命名文件夹")
+    }
+
+    @Test func newFolderNameFirstConflict() {
+        let name = WorkspaceModel.newFolderName(in: ["未命名文件夹"])
+        #expect(name == "未命名文件夹 2")
+    }
+
+    @Test func newFolderNameMultipleConflicts() {
+        let name = WorkspaceModel.newFolderName(in: ["未命名文件夹", "未命名文件夹 2", "未命名文件夹 3"])
+        #expect(name == "未命名文件夹 4")
+    }
+
+    @Test func newFolderNameGapInSequence() {
+        let name = WorkspaceModel.newFolderName(in: ["未命名文件夹", "未命名文件夹 3"])
+        #expect(name == "未命名文件夹 2")
+    }
 }
