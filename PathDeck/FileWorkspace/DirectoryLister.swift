@@ -39,11 +39,5 @@ enum DirectoryLister {
                     kind: values?.localizedTypeDescription ?? ""
                 )
             }
-            .sorted { lhs, rhs in
-                if lhs.isDirectory != rhs.isDirectory {
-                    return lhs.isDirectory
-                }
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-            }
     }
 }

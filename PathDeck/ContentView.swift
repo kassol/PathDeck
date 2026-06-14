@@ -1,11 +1,27 @@
 import SwiftUI
 
+extension FocusedValues {
+    @Entry var workspaceModel: WorkspaceModel?
+}
+
 struct ContentView: View {
     @State private var model = WorkspaceModel()
 
     var body: some View {
         VStack(spacing: 0) {
-            FileTableView(items: model.items, onOpen: { model.enter($0) })
+            PathBarView(segments: model.pathSegments) { url in
+                model.navigate(to: url)
+            }
+
+            Divider()
+
+            FileTableView(
+                items: model.items,
+                onOpen: { model.enter($0) },
+                onSort: { column, ascending in
+                    model.applySort(column: column, ascending: ascending)
+                }
+            )
 
             Divider()
 
@@ -28,7 +44,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 720, minHeight: 480)
         .navigationTitle(model.currentURL.lastPathComponent)
-        .navigationSubtitle((model.currentURL.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath)
+        .navigationSubtitle(
+            (model.currentURL.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+        )
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button { model.goUp() } label: {
@@ -38,5 +56,41 @@ struct ContentView: View {
                 .help("返回上级")
             }
         }
+        .focusedSceneValue(\.workspaceModel, model)
+    }
+}
+
+// MARK: - Path Bar
+
+private struct PathBarView: View {
+    var segments: [(name: String, url: URL)]
+    var onNavigate: (URL) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                    if index > 0 {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.quaternary)
+                    }
+                    Button {
+                        onNavigate(segment.url)
+                    } label: {
+                        Text(segment.name)
+                            .font(.system(size: 12))
+                            .foregroundStyle(
+                                index == segments.count - 1 ? .primary : .secondary
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+        }
+        .frame(height: 24)
+        .background(.bar)
     }
 }

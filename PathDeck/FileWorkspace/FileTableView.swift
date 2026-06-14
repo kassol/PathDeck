@@ -1,21 +1,13 @@
-//
-//  FileTableView.swift
-//  PathDeck
-//
-//  Created by kassol on 2026/6/13.
-//
-
 import AppKit
 import SwiftUI
 
-/// 文件列表视图：SwiftUI 中嵌入 AppKit `NSTableView`。
-/// 选用 NSTableView 而非 SwiftUI Table，见 FileWorkspace/AGENTS.md。
 struct FileTableView: NSViewRepresentable {
     var items: [FileItem]
     var onOpen: (FileItem) -> Void
+    var onSort: (String, Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(items: items, onOpen: onOpen)
+        Coordinator(items: items, onOpen: onOpen, onSort: onSort)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -39,8 +31,11 @@ struct FileTableView: NSViewRepresentable {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(spec.id))
             column.title = spec.title
             column.width = spec.width
+            column.sortDescriptorPrototype = NSSortDescriptor(key: spec.id, ascending: true)
             tableView.addTableColumn(column)
         }
+
+        tableView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
 
         context.coordinator.tableView = tableView
 
@@ -54,6 +49,7 @@ struct FileTableView: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         context.coordinator.items = items
         context.coordinator.onOpen = onOpen
+        context.coordinator.onSort = onSort
         (nsView.documentView as? NSTableView)?.reloadData()
     }
 
@@ -65,6 +61,7 @@ struct FileTableView: NSViewRepresentable {
 
         var items: [FileItem]
         var onOpen: (FileItem) -> Void
+        var onSort: (String, Bool) -> Void
         weak var tableView: NSTableView?
 
         private let sizeFormatter: ByteCountFormatter = {
@@ -79,9 +76,10 @@ struct FileTableView: NSViewRepresentable {
             return formatter
         }()
 
-        init(items: [FileItem], onOpen: @escaping (FileItem) -> Void) {
+        init(items: [FileItem], onOpen: @escaping (FileItem) -> Void, onSort: @escaping (String, Bool) -> Void) {
             self.items = items
             self.onOpen = onOpen
+            self.onSort = onSort
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int { items.count }
@@ -107,6 +105,12 @@ struct FileTableView: NSViewRepresentable {
                 break
             }
             return cell
+        }
+
+        func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+            guard let descriptor = tableView.sortDescriptors.first,
+                  let key = descriptor.key else { return }
+            onSort(key, descriptor.ascending)
         }
 
         @objc func handleDoubleClick(_ sender: NSTableView) {

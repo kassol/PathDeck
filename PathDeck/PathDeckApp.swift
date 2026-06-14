@@ -1,10 +1,3 @@
-//
-//  PathDeckApp.swift
-//  PathDeck
-//
-//  Created by kassol on 2026/6/13.
-//
-
 import SwiftUI
 
 @main
@@ -17,6 +10,7 @@ struct PathDeckApp: App {
         }
         .commands {
             TerminalCommands()
+            ViewCommands()
         }
 
         // S2 冒烟：独立终端窗口，与文件列表主窗口隔离。
@@ -38,6 +32,26 @@ private struct TerminalCommands: Commands {
                 openWindow(id: PathDeckApp.terminalWindowID)
             }
             .keyboardShortcut("t", modifiers: [.control, .option, .command])
+        }
+    }
+}
+
+/// 显示菜单命令：隐藏文件切换 + 复制路径。
+private struct ViewCommands: Commands {
+    @FocusedValue(\.workspaceModel) private var model
+
+    var body: some Commands {
+        CommandMenu("显示") {
+            Button(model?.showHidden == true ? "隐藏隐藏文件" : "显示隐藏文件") {
+                model?.toggleHidden()
+            }
+            .keyboardShortcut(".", modifiers: [.command, .shift])
+        }
+        CommandGroup(after: .pasteboard) {
+            Button("复制当前路径") {
+                model?.copyCurrentPath()
+            }
+            .keyboardShortcut("c", modifiers: [.command, .option])
         }
     }
 }

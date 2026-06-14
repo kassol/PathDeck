@@ -32,10 +32,10 @@ struct DirectoryListerTests {
         let items = try DirectoryLister.list(dir)
 
         #expect(items.count == 3)
-        // 目录排在文件之前
-        #expect(items.first?.isDirectory == true)
-        #expect(items.first?.name == "sub")
-        #expect(items.first?.size == nil)
+
+        let sub = try #require(items.first { $0.name == "sub" })
+        #expect(sub.isDirectory == true)
+        #expect(sub.size == nil)
 
         let a = try #require(items.first { $0.name == "a.txt" })
         #expect(a.isDirectory == false)
