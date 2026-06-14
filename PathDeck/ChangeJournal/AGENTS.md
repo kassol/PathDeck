@@ -10,10 +10,10 @@
 
 | 文件 | 职责 |
 |---|---|
-| `ChangeEvent.swift` | 变化事件值类型 model（`Sendable`，不依赖 GRDB） |
+| `ChangeEvent.swift` | 变化事件值类型 model（`Sendable`，不依赖 GRDB）+ `ChangeTimeGroup` 枚举 + `grouped()` 时间分组纯函数 |
 | `ChangeStore.swift` | GRDB 封装：WAL 模式 SQLite 初始化、schema migration、批量写入、按目录查询 |
 | `FSWatcher.swift` | FSEvents 封装（`nonisolated`，后台 DispatchQueue）：监听指定目录、事件 flag 分类、回调通知 |
-| `ChangeListView.swift` | SwiftUI 变化列表视图（type icon + 文件名 + 相对时间） |
+| `ChangeListView.swift` | SwiftUI 变化列表视图：类型过滤 + 时间分组 + 行点击定位 |
 
 ## 模块规范
 
@@ -32,5 +32,6 @@
 
 ## 变更日志
 
+- 2026-06-14 S10 变化面板增强 + FSWatcher coalescing：`ChangeEvent.swift` 新增 `ChangeTimeGroup` 枚举 + `grouped()` 时间分组纯函数（刚刚/5分钟内/今天/更早）+ `nsColor` 属性；`ChangeListView.swift` 重写为类型过滤（全部/新增/修改/删除 FilterBar）+ 时间分组 Section + 行点击选中回调；`FSWatcher.handleRawEvents` 新增 same-path coalescing（同一批次回调中同一 path 只取首条成功分类事件，根因：`touch` 的 `open(O_CREAT)` + `utimes()` 产生 created+modified 两条独立 FSEvents）。
 - 2026-06-14 S5 修复：`handleRawEvents` 加 `kFSEventStreamEventFlagItemIsDir` 处理——目录创建/删除事件此前被 `guard isFile` 过滤掉；`classify` 从 `private` 改为 `static`（internal）以便单测。
 - 2026-06-14 S3 落地：FSEvents 监听 + SQLite 事件写入 + 变化列表 UI。

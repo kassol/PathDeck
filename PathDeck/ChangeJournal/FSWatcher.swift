@@ -64,6 +64,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     fileprivate func handleRawEvents(paths: [String], flags: [FSEventStreamEventFlags]) {
         guard let watchedDir = watchedDirectory else { return }
         var classified: [(path: String, type: ChangeEventType)] = []
+        var seen = Set<String>()
 
         for (path, flag) in zip(paths, flags) {
             let isFile = flag & UInt32(kFSEventStreamEventFlagItemIsFile) != 0
@@ -71,9 +72,9 @@ nonisolated final class FSWatcher: @unchecked Sendable {
             guard isFile || isDir else { continue }
             let parent = (path as NSString).deletingLastPathComponent
             guard parent == watchedDir else { continue }
-            if let type = Self.classify(flag: flag, path: path) {
-                classified.append((path: path, type: type))
-            }
+            guard let type = Self.classify(flag: flag, path: path) else { continue }
+            guard seen.insert(path).inserted else { continue }
+            classified.append((path: path, type: type))
         }
 
         guard !classified.isEmpty else { return }

@@ -14,12 +14,14 @@ final class WorkspaceModel {
     private(set) var items: [FileItem] = []
     private(set) var allItems: [FileItem] = []
     private(set) var changes: [ChangeEvent] = []
+    private(set) var changeIndicators: [String: ChangeEventType] = [:]
 
     var sortColumn: SortColumn = .name
     var sortAscending: Bool = true
     var showHidden: Bool = false
     var selectedURLs: [URL] = []
     var pendingRenameURL: URL?
+    var scrollToURL: URL?
     var isSearching: Bool = false
     var isTerminalVisible: Bool = false
     var searchQuery: String = "" {
@@ -51,6 +53,7 @@ final class WorkspaceModel {
 
     private var watcher: FSWatcher?
     private var changeStore: ChangeStore?
+    private var indicatorTimers: [String: Timer] = [:]
 
     init(root: URL? = nil) {
         if let root {
@@ -98,6 +101,7 @@ final class WorkspaceModel {
         currentURL = url.standardizedFileURL
         searchQuery = ""
         isSearching = false
+        clearExpiredIndicators()
         reload()
         watcher?.watch(directory: currentURL)
         UserDefaults.standard.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
@@ -124,6 +128,12 @@ final class WorkspaceModel {
         sortAscending = ascending
         allItems = Self.sortedItems(allItems, by: sortColumn, ascending: sortAscending)
         applySearch()
+    }
+
+    func clearExpiredIndicators() {
+        changeIndicators.removeAll()
+        for (_, timer) in indicatorTimers { timer.invalidate() }
+        indicatorTimers.removeAll()
     }
 
     func copyCurrentPath() {
@@ -234,6 +244,19 @@ final class WorkspaceModel {
         let dir = currentURL.path(percentEncoded: false)
         let batch = events.map { (path: $0.path, type: $0.type, directory: dir) }
         try? changeStore?.recordBatch(batch)
+
+        for event in events {
+            guard event.type != .deleted else { continue }
+            changeIndicators[event.path] = event.type
+            indicatorTimers[event.path]?.invalidate()
+            indicatorTimers[event.path] = Timer.scheduledTimer(
+                withTimeInterval: 30, repeats: false
+            ) { [weak self] _ in
+                self?.changeIndicators.removeValue(forKey: event.path)
+                self?.indicatorTimers.removeValue(forKey: event.path)
+            }
+        }
+
         reload()
     }
 }

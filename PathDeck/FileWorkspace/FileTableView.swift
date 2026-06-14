@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct FileTableView: NSViewRepresentable {
     var items: [FileItem]
     var pendingRenameURL: URL?
+    var changeIndicators: [String: ChangeEventType]
+    var scrollToURL: URL?
     var onOpen: (FileItem) -> Void
     var onSort: (String, Bool) -> Void
     var onSelectionChange: ([FileItem]) -> Void
@@ -13,6 +15,7 @@ struct FileTableView: NSViewRepresentable {
     var onRename: (URL, String) -> Bool
     var onNewFolder: () -> Void
     var onClearPendingRename: () -> Void
+    var onClearScrollToURL: () -> Void
     var onSendPathToTerminal: ([URL]) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -23,6 +26,7 @@ struct FileTableView: NSViewRepresentable {
         let tableView = FileNSTableView()
         tableView.dataSource = context.coordinator
         tableView.delegate = context.coordinator
+        tableView.setDraggingSourceOperationMask(.copy, forLocal: false)
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true
         tableView.rowHeight = 22
@@ -68,7 +72,9 @@ struct FileTableView: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let coord = context.coordinator
         let itemsChanged = coord.items != items
+        let indicatorsChanged = coord.changeIndicators != changeIndicators
         coord.items = items
+        coord.changeIndicators = changeIndicators
         coord.onOpen = onOpen
         coord.onSort = onSort
         coord.onSelectionChange = onSelectionChange
@@ -78,7 +84,7 @@ struct FileTableView: NSViewRepresentable {
         coord.onSendPathToTerminal = onSendPathToTerminal
 
         guard let tv = nsView.documentView as? NSTableView else { return }
-        if coord.editingRow < 0, itemsChanged {
+        if coord.editingRow < 0, itemsChanged || indicatorsChanged {
             tv.reloadData()
         }
 
@@ -92,6 +98,18 @@ struct FileTableView: NSViewRepresentable {
                     coord.beginRename(row: row)
                 }
                 clearPending()
+            }
+        }
+
+        if let targetURL = scrollToURL {
+            let itemsSnapshot = items
+            let clearScroll = onClearScrollToURL
+            DispatchQueue.main.async {
+                if let row = itemsSnapshot.firstIndex(where: { $0.url == targetURL }) {
+                    tv.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    tv.scrollRowToVisible(row)
+                }
+                clearScroll()
             }
         }
     }
@@ -143,6 +161,7 @@ struct FileTableView: NSViewRepresentable {
         static let kindColumn = "kind"
 
         var items: [FileItem]
+        var changeIndicators: [String: ChangeEventType]
         var onOpen: (FileItem) -> Void
         var onSort: (String, Bool) -> Void
         var onSelectionChange: ([FileItem]) -> Void
@@ -153,6 +172,8 @@ struct FileTableView: NSViewRepresentable {
         weak var tableView: NSTableView?
 
         var editingRow: Int = -1
+
+        private static let dotIdentifier = NSUserInterfaceItemIdentifier("changeDot")
 
         private let sizeFormatter: ByteCountFormatter = {
             let formatter = ByteCountFormatter()
@@ -168,6 +189,7 @@ struct FileTableView: NSViewRepresentable {
 
         init(parent: FileTableView) {
             self.items = parent.items
+            self.changeIndicators = parent.changeIndicators
             self.onOpen = parent.onOpen
             self.onSort = parent.onSort
             self.onSelectionChange = parent.onSelectionChange
@@ -180,6 +202,12 @@ struct FileTableView: NSViewRepresentable {
         // MARK: - DataSource
 
         func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+
+        func tableView(_ tableView: NSTableView,
+                       pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
+            guard row < items.count else { return nil }
+            return items[row].url as NSURL
+        }
 
         // MARK: - Delegate
 
@@ -202,6 +230,16 @@ struct FileTableView: NSViewRepresentable {
             case Self.nameColumn:
                 cell.imageView?.image = NSWorkspace.shared.icon(forFile: item.url.path)
                 cell.textField?.stringValue = item.name
+                let dot = cell.subviews.first {
+                    $0.accessibilityIdentifier() == Self.dotIdentifier.rawValue
+                }
+                let path = item.url.path(percentEncoded: false)
+                if let indicatorType = changeIndicators[path] {
+                    dot?.isHidden = false
+                    dot?.layer?.backgroundColor = indicatorType.nsColor.cgColor
+                } else {
+                    dot?.isHidden = true
+                }
             case Self.dateColumn:
                 cell.textField?.stringValue =
                     item.modifiedDate.map { dateFormatter.string(from: $0) } ?? "--"
@@ -489,12 +527,24 @@ struct FileTableView: NSViewRepresentable {
             cell.addSubview(textField)
 
             if withIcon {
+                let dot = NSView()
+                dot.translatesAutoresizingMaskIntoConstraints = false
+                dot.wantsLayer = true
+                dot.layer?.cornerRadius = 3
+                dot.setAccessibilityIdentifier(dotIdentifier.rawValue)
+                dot.isHidden = true
+                cell.addSubview(dot)
+
                 let imageView = NSImageView()
                 imageView.translatesAutoresizingMaskIntoConstraints = false
                 cell.imageView = imageView
                 cell.addSubview(imageView)
                 NSLayoutConstraint.activate([
-                    imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                    dot.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                    dot.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    dot.widthAnchor.constraint(equalToConstant: 6),
+                    dot.heightAnchor.constraint(equalToConstant: 6),
+                    imageView.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 2),
                     imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                     imageView.widthAnchor.constraint(equalToConstant: 16),
                     imageView.heightAnchor.constraint(equalToConstant: 16),

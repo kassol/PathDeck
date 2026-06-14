@@ -44,6 +44,8 @@ struct ContentView: View {
                 FileTableView(
                     items: model.items,
                     pendingRenameURL: model.pendingRenameURL,
+                    changeIndicators: model.changeIndicators,
+                    scrollToURL: model.scrollToURL,
                     onOpen: { model.enter($0) },
                     onSort: { column, ascending in
                         model.applySort(column: column, ascending: ascending)
@@ -55,6 +57,7 @@ struct ContentView: View {
                     onRename: { model.renameItem(from: $0, to: $1) },
                     onNewFolder: { model.newFolder() },
                     onClearPendingRename: { model.pendingRenameURL = nil },
+                    onClearScrollToURL: { model.scrollToURL = nil },
                     onSendPathToTerminal: { urls in
                         sendPathToTerminal(urls)
                     }
@@ -73,6 +76,9 @@ struct ContentView: View {
                     TerminalPanelView(cwd: model.currentURL, engine: terminalEngine)
                         .frame(height: model.isTerminalVisible ? terminalHeight : 0)
                         .clipped()
+                        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                            handleTerminalDrop(providers)
+                        }
                 }
 
                 if !model.isTerminalVisible {
@@ -91,7 +97,13 @@ struct ContentView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
 
-                        ChangeListView(events: model.changes)
+                        ChangeListView(events: model.changes) { event in
+                            let url = URL(fileURLWithPath: event.path)
+                            if FileManager.default.fileExists(atPath: event.path) {
+                                model.selectedURLs = [url]
+                                model.scrollToURL = url
+                            }
+                        }
                     }
                     .frame(height: 180)
                 }
@@ -141,6 +153,32 @@ struct ContentView: View {
             }
             return true
         }
+    }
+
+    private func handleTerminalDrop(_ providers: [NSItemProvider]) -> Bool {
+        let lock = NSLock()
+        var urls: [URL] = []
+        let group = DispatchGroup()
+        for provider in providers {
+            guard provider.canLoadObject(ofClass: URL.self) else { continue }
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url {
+                    lock.lock()
+                    urls.append(url)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            guard !urls.isEmpty else { return }
+            let escaped = ShellEscape.escapeMultiple(
+                urls.map { $0.path(percentEncoded: false) }
+            )
+            terminalEngine.writeText(escaped)
+        }
+        return true
     }
 
     private func sendPathToTerminal(_ urls: [URL]) {
