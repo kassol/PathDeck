@@ -23,6 +23,7 @@ struct ChangeEvent: Identifiable, Hashable, Sendable {
     let eventType: ChangeEventType
     let timestamp: Date
     let directory: String
+    let terminalSessionID: UUID?
 }
 
 // MARK: - Time Grouping

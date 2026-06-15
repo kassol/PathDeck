@@ -63,6 +63,9 @@ struct ContentView: View {
                     createTerminalTab()
                 }
             }
+            .onChange(of: activeTerminalID) { _, newID in
+                model.activeTerminalSessionID = newID
+            }
             .focusedSceneValue(\.workspaceModel, model)
             .focusedSceneValue(\.sendPathAction) { urls in
                 sendPathToTerminal(urls)
@@ -178,6 +181,7 @@ struct ContentView: View {
             // Changes content (keep in view tree to preserve @State filter)
             ChangeListView(
                 events: model.changes,
+                versionedPaths: model.versionedPaths,
                 hiddenCount: model.hiddenCount,
                 onRulesChanged: { model.reload() }
             ) { event in

@@ -16,6 +16,7 @@ final class WorkspaceModel {
     private(set) var changes: [ChangeEvent] = []
     private(set) var changeIndicators: [String: ChangeEventType] = [:]
     private(set) var hiddenCount: Int = 0
+    private(set) var versionedPaths: Set<String> = []
 
     var sortColumn: SortColumn = .name
     var sortAscending: Bool = true
@@ -25,6 +26,7 @@ final class WorkspaceModel {
     var scrollToURL: URL?
     var isSearching: Bool = false
     var isBottomPanelVisible: Bool = false
+    var activeTerminalSessionID: UUID?
     var searchQuery: String = "" {
         didSet { applySearch() }
     }
@@ -54,6 +56,7 @@ final class WorkspaceModel {
 
     private var watcher: FSWatcher?
     private var changeStore: ChangeStore?
+    private var versionStore: VersionStore?
     private var indicatorTimers: [String: Timer] = [:]
     private var recentEventKeys: [String: Date] = [:]
 
@@ -77,6 +80,11 @@ final class WorkspaceModel {
             changeStore = try ChangeStore()
         } catch {
             NSLog("[PathDeck] ChangeStore init failed: \(error)")
+        }
+        do {
+            versionStore = try VersionStore()
+        } catch {
+            NSLog("[PathDeck] VersionStore init failed: \(error)")
         }
 
         watcher = FSWatcher { [weak self] events in
@@ -243,6 +251,7 @@ final class WorkspaceModel {
         let filtered = raw.filter { !IgnoreRules.shouldIgnore(fileName: $0.fileName) }
         changes = Array(filtered.prefix(50))
         hiddenCount = raw.count - filtered.count
+        versionedPaths = Set((try? versionStore?.pathsWithVersions(in: dir)) ?? [])
     }
 
     private func handleFSEvents(_ events: [(path: String, type: ChangeEventType)]) {
@@ -262,7 +271,11 @@ final class WorkspaceModel {
 
         let dir = currentURL.path(percentEncoded: false)
         let batch = accepted.map { (path: $0.path, type: $0.type, directory: dir) }
-        try? changeStore?.recordBatch(batch)
+        try? changeStore?.recordBatch(batch, terminalSessionID: activeTerminalSessionID)
+
+        for event in accepted where event.type == .added || event.type == .modified {
+            snapshotIfEligible(path: event.path)
+        }
 
         for event in accepted {
             guard event.type != .deleted else { continue }
@@ -277,6 +290,19 @@ final class WorkspaceModel {
         }
 
         reload()
+    }
+
+    private func snapshotIfEligible(path: String) {
+        let url = URL(fileURLWithPath: path)
+        guard VersionStore.isEligible(url: url),
+              let content = try? Data(contentsOf: url) else { return }
+        let hash = content.sha256Hex
+        try? versionStore?.saveVersion(
+            path: path,
+            directory: currentURL.path(percentEncoded: false),
+            content: content,
+            hash: hash
+        )
     }
 }
 

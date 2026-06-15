@@ -26,6 +26,9 @@ final class ChangeStore {
                 t.column("directory", .text).notNull().indexed()
             }
         }
+        migrator.registerMigration("v2") { db in
+            try db.execute(sql: "ALTER TABLE change_events ADD COLUMN terminalSessionID TEXT")
+        }
         try migrator.migrate(dbQueue)
     }
 
@@ -36,18 +39,22 @@ final class ChangeStore {
         try self.init(databasePath: appSupport.appendingPathComponent("changes.db").path(percentEncoded: false))
     }
 
-    func recordBatch(_ events: [(path: String, type: ChangeEventType, directory: String)]) throws {
+    func recordBatch(
+        _ events: [(path: String, type: ChangeEventType, directory: String)],
+        terminalSessionID: UUID? = nil
+    ) throws {
         guard !events.isEmpty else { return }
         let now = Date()
+        let sessionStr = terminalSessionID?.uuidString
         try dbQueue.write { db in
             for event in events {
                 let fileName = (event.path as NSString).lastPathComponent
                 try db.execute(
                     sql: """
-                        INSERT INTO change_events (path, fileName, eventType, timestamp, directory)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO change_events (path, fileName, eventType, timestamp, directory, terminalSessionID)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                    arguments: [event.path, fileName, event.type.rawValue, now, event.directory]
+                    arguments: [event.path, fileName, event.type.rawValue, now, event.directory, sessionStr]
                 )
             }
         }
@@ -74,9 +81,12 @@ final class ChangeStore {
                       let timestamp: Date = row["timestamp"],
                       let directory: String = row["directory"]
                 else { return nil }
+                let sessionStr: String? = row["terminalSessionID"]
+                let sessionID = sessionStr.flatMap { UUID(uuidString: $0) }
                 return ChangeEvent(
                     id: id, path: path, fileName: fileName,
-                    eventType: type, timestamp: timestamp, directory: directory
+                    eventType: type, timestamp: timestamp, directory: directory,
+                    terminalSessionID: sessionID
                 )
             }
         }

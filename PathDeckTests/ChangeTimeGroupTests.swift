@@ -12,7 +12,8 @@ struct ChangeTimeGroupTests {
             fileName: "file\(Int(secondsAgo)).txt",
             eventType: type,
             timestamp: now.addingTimeInterval(-secondsAgo),
-            directory: "/tmp"
+            directory: "/tmp",
+            terminalSessionID: nil
         )
     }
 
@@ -46,7 +47,8 @@ struct ChangeTimeGroupTests {
             fileName: "old.txt",
             eventType: .modified,
             timestamp: Calendar.current.date(byAdding: .day, value: -2, to: now)!,
-            directory: "/tmp"
+            directory: "/tmp",
+            terminalSessionID: nil
         )
         let groups = ChangeEvent.grouped([yesterday], relativeTo: now)
         #expect(groups.count == 1)

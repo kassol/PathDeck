@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChangeListView: View {
     let events: [ChangeEvent]
+    var versionedPaths: Set<String> = []
     var hiddenCount: Int = 0
     var onRulesChanged: (() -> Void)?
     var onNavigate: ((ChangeEvent) -> Void)?
@@ -46,7 +47,7 @@ struct ChangeListView: View {
                     ForEach(groups, id: \.group) { section in
                         Section {
                             ForEach(section.events) { event in
-                                ChangeRow(event: event)
+                                ChangeRow(event: event, hasVersion: versionedPaths.contains(event.path))
                                     .contentShape(Rectangle())
                                     .onTapGesture { onNavigate?(event) }
                             }
@@ -200,6 +201,7 @@ private struct FilterChip: View {
 
 private struct ChangeRow: View {
     let event: ChangeEvent
+    var hasVersion: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -210,6 +212,18 @@ private struct ChangeRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
+            if hasVersion {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .help("已保存版本快照")
+            }
+            if event.terminalSessionID != nil {
+                Image(systemName: "terminal")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .help("终端活跃期间产生")
+            }
             Text(event.timestamp, style: .relative)
                 .foregroundStyle(.secondary)
                 .font(.caption)

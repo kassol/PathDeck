@@ -98,4 +98,56 @@ struct ChangeStoreTests {
         #expect(events[0].fileName == "report.pdf")
         #expect(events[0].path == "/Users/kassol/Documents/report.pdf")
     }
+
+    @Test
+    func terminalSessionIDWrittenAndRead() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let sessionID = UUID()
+        try store.recordBatch(
+            [(path: "/tmp/a.txt", type: .added, directory: "/tmp")],
+            terminalSessionID: sessionID
+        )
+
+        let events = try store.recentEvents(in: "/tmp")
+        #expect(events.count == 1)
+        #expect(events[0].terminalSessionID == sessionID)
+    }
+
+    @Test
+    func terminalSessionIDNilWhenOmitted() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        try store.recordBatch([
+            (path: "/tmp/b.txt", type: .modified, directory: "/tmp"),
+        ])
+
+        let events = try store.recentEvents(in: "/tmp")
+        #expect(events.count == 1)
+        #expect(events[0].terminalSessionID == nil)
+    }
+
+    @Test
+    func v1EventsReadBackWithNilSessionID() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        try store.recordBatch([
+            (path: "/tmp/old.txt", type: .added, directory: "/tmp"),
+        ])
+        let sessionID = UUID()
+        try store.recordBatch(
+            [(path: "/tmp/new.txt", type: .added, directory: "/tmp")],
+            terminalSessionID: sessionID
+        )
+
+        let events = try store.recentEvents(in: "/tmp")
+        #expect(events.count == 2)
+        let oldEvent = events.first { $0.fileName == "old.txt" }
+        let newEvent = events.first { $0.fileName == "new.txt" }
+        #expect(oldEvent?.terminalSessionID == nil)
+        #expect(newEvent?.terminalSessionID == sessionID)
+    }
 }

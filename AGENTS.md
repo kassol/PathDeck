@@ -46,7 +46,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal/Changes tab 共存。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）+ S14 终端活跃期间变化归因（弱关联到活跃终端 session）+ 轻量文件版本快照（文本类 ≤1MB 自动快照，独立 `versions.db`，hash 去重 + per-file 10 版本上限）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合，M3 闭合。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal/Changes tab 共存。
 
 ```
 PathDeck/                  App 源码
@@ -54,7 +54,7 @@ PathDeck/ContentView.swift NavigationSplitView 主布局 + 底部面板 tab 切�
 PathDeck/SidebarView.swift Sidebar（Favorites + Pinned）+ PinnedFolders 持久化
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图），见其 AGENTS.md
 PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议），见其 AGENTS.md
-PathDeck/ChangeJournal/    文件变化感知与记录模块（FSEvents + SQLite），见其 AGENTS.md
+PathDeck/ChangeJournal/    文件变化感知与记录模块（FSEvents + SQLite + 版本快照），见其 AGENTS.md
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
@@ -158,6 +158,7 @@ xcodebuild -deleteComponent MetalToolchain
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-15 **S14 终端归因 + 文件版本快照**（M3 闭合 + M4 基础）：`ChangeEvent` 新增 `terminalSessionID` 归因字段 + `ChangeStore` v2 migration + 新增 `VersionStore`（独立 `versions.db`，文本类 ≤1MB 自动快照，SHA256 hash 去重，per-file 10 版本上限）+ `ChangeListView` 终端归因图标 + 版本快照图标 + `WorkspaceModel` 集成归因传递与快照触发。90 个单测通过（+8）。
 - 2026-06-15 **S13 窗口布局骨架**：NavigationSplitView 两列布局（sidebar Finder 风格 Favorites + detail 工作区）+ 底部面板 Terminal/Changes tab 共存（终端不再遮挡变化列表）+ BottomPanelBar 统一 tab bar + `isTerminalVisible` → `isBottomPanelVisible` 语义重命名 + Terminal exit 自动关闭 tab（`wait_after_command=false` + `close_surface_cb` → 通知 → 反查 `process_exited` → 回调关闭）。82 个单测通过。
 - 2026-06-14 **M2 闭合**（S8–S12）：Terminal Panel 嵌入主窗口 + Context Bridge（Send Path + 拖拽到终端）+ 变化面板增强（时间分组/类型过滤/点击定位/文件标记）+ 忽略规则（默认噪音过滤 + 用户自定义 glob）+ 多 Terminal Tab（独立 PTY/cwd/scrollback）。82 个单测通过。
 - 2026-06-14 **M1 闭合**（S4–S7）：路径导航/排序/隐藏文件 + 右键菜单文件操作 + Quick Look 预览 + 打开文件夹/搜索。56 个单测通过。
