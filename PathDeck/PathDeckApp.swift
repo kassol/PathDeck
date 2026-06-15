@@ -1,8 +1,11 @@
 import SwiftUI
+import AppKit
 
 @main
 struct PathDeckApp: App {
     static let terminalWindowID = "terminal-smoke"
+
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         ShellIntegration.prepare()
@@ -28,6 +31,33 @@ struct PathDeckApp: App {
                 .frame(minWidth: 640, minHeight: 400)
         }
         .defaultSize(width: 800, height: 500)
+    }
+}
+
+/// App 委托：统一 URL Scheme 与 Open With 的入口（`application(_:open:)`），并注册 Finder Services。
+///
+/// URL 一律走 `application(_:open:)`，不挂 `.onOpenURL`——规避 `WindowGroup` 复制窗口 quirk 与双触发。
+/// 所有入口经 `AppRouter` 投递路由，由 `ContentView` 消费。`LSMultipleInstancesProhibited` 保证唤起复用本进程。
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let servicesProvider = ServicesProvider()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.servicesProvider = servicesProvider
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            if url.isFileURL {
+                // CFBundleDocumentTypes「打开方式」投递的文件夹 file URL → .open
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(
+                    atPath: url.path(percentEncoded: false), isDirectory: &isDir
+                ), isDir.boolValue else { continue }
+                AppRouter.shared.request(.open(url.standardizedFileURL))
+            } else if let route = URLSchemeHandler.route(for: url) {
+                AppRouter.shared.request(route)
+            }
+        }
     }
 }
 

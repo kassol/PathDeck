@@ -32,7 +32,8 @@ final class WorkspaceModel {
     }
     var selectedURLs: [URL] = []
     var pendingRenameURL: URL?
-    var scrollToURL: URL?
+    /// 命令式选择信号：驱动 `FileTableView` 选中这组 URL 的行并滚动到首项（单项即长度 1），消费后置 nil。
+    var revealSelection: [URL]?
     var isSearching: Bool = false
     var isBottomPanelVisible: Bool = false
     var activeTerminalSessionID: UUID?
@@ -137,6 +138,21 @@ final class WorkspaceModel {
         reload()
         watcher?.watch(directory: currentURL)
         defaults.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
+    }
+
+    /// 导航到首项父目录并高亮选择集（跨目录 reveal / Open Selection，单项即长度 1）。
+    /// 单 workspace 只展示一个目录：仅高亮与首项同父目录的项，跨父目录的其余项忽略。
+    /// `selectedURLs`/`revealSelection` 锚在 navigate 后的 `currentURL` 上，与 `DirectoryLister` 子项 URL 同构；
+    /// `revealSelection` 驱动 `FileTableView` 一次性 `selectRowIndexes`（全部行）+ `scrollRowToVisible`（首项），
+    /// 表格选中后经 `onSelectionChange` 回写 `selectedURLs`（单设 `selectedURLs` 不触发表格高亮）。
+    func reveal(_ fileURLs: [URL]) {
+        guard let first = fileURLs.first else { return }
+        navigate(to: first.deletingLastPathComponent())
+        let targets = fileURLs
+            .filter { $0.deletingLastPathComponent().standardizedFileURL == currentURL }
+            .map { currentURL.appendingPathComponent($0.lastPathComponent) }
+        selectedURLs = targets
+        revealSelection = targets
     }
 
     func openFolder() {

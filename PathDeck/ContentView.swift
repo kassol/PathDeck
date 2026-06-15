@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var isPreviewPaneVisible: Bool = true
     @State private var hasRestoredState: Bool = false
 
+    private let router = AppRouter.shared
+
     private let terminalMinHeight: CGFloat = 100
     private let terminalMaxFraction: CGFloat = 0.6
 
@@ -85,6 +87,9 @@ struct ContentView: View {
             .onChange(of: activeTerminalID) { _, newID in
                 model.activeTerminalSessionID = newID
             }
+            .onChange(of: router.pending) { _, _ in
+                handleExternalRoute()
+            }
             .focusedSceneValue(\.workspaceModel, model)
             .focusedSceneValue(\.sendPathAction) { urls in
                 sendPathToTerminal(urls)
@@ -108,7 +113,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
-        .onAppear { setupEngineCallbacks(); restoreState() }
+        .onAppear { setupEngineCallbacks(); restoreState(); handleExternalRoute() }
         .onDisappear { saveTerminalTabState() }
         .modifier(StatePersistenceModifier(
             activeBottomTab: activeBottomTab,
@@ -164,7 +169,7 @@ struct ContentView: View {
                     items: model.items,
                     pendingRenameURL: model.pendingRenameURL,
                     changeIndicators: model.changeIndicators,
-                    scrollToURL: model.scrollToURL,
+                    revealSelection: model.revealSelection,
                     onOpen: { model.enter($0) },
                     onSort: { column, ascending in
                         model.applySort(column: column, ascending: ascending)
@@ -176,7 +181,7 @@ struct ContentView: View {
                     onRename: { model.renameItem(from: $0, to: $1) },
                     onNewFolder: { model.newFolder() },
                     onClearPendingRename: { model.pendingRenameURL = nil },
-                    onClearScrollToURL: { model.scrollToURL = nil },
+                    onClearRevealSelection: { model.revealSelection = nil },
                     onSendPathToTerminal: { urls in
                         sendPathToTerminal(urls)
                     }
@@ -246,7 +251,7 @@ struct ContentView: View {
                     let url = URL(fileURLWithPath: event.path)
                     if FileManager.default.fileExists(atPath: event.path) {
                         model.selectedURLs = [url]
-                        model.scrollToURL = url
+                        model.revealSelection = [url]
                     }
                 },
                 onDiff: { path in
@@ -273,6 +278,40 @@ struct ContentView: View {
                 .clipped()
             }
         }
+    }
+
+    // MARK: - External Entry (URL Scheme / Services / Open With)
+
+    /// 消费 `AppRouter` 的一次性令牌，把外部入口归一为 model 导航。
+    /// onAppear 与 `router.pending` 变化各调一次，覆盖冷启动唤起与运行时唤起两种时序，consume 幂等。
+    private func handleExternalRoute() {
+        guard let route = router.consume() else { return }
+        switch route {
+        case .open(let url):
+            model.navigate(to: url)
+            RecentFolders.shared.add(url)
+        case .reveal(let urls):
+            model.reveal(urls)
+        case .terminal(let url, let requireConfirmation):
+            // 外部不可信入口（URL Scheme）开 shell 前须用户确认（PRD 1214）
+            if requireConfirmation, !confirmOpenTerminal(at: url) { return }
+            model.navigate(to: url)
+            RecentFolders.shared.add(url)
+            activeBottomTab = .terminal
+            createTerminalTab()  // cwd = model.currentURL（navigate 已同步设为 url）
+            if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
+        }
+    }
+
+    /// 外部请求在指定目录打开终端时的确认对话框。返回 true 表示用户允许。
+    private func confirmOpenTerminal(at url: URL) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "在此目录打开终端？"
+        alert.informativeText = "一个外部请求要在以下目录打开终端：\n\(url.path(percentEncoded: false))"
+        alert.addButton(withTitle: "打开终端")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     // MARK: - Terminal Tab Management

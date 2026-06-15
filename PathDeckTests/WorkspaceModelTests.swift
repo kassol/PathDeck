@@ -16,6 +16,78 @@ struct WorkspaceModelTests {
         #expect(model.currentURL.path(percentEncoded: false) == "/")
     }
 
+    // MARK: - Reveal
+
+    private func makeTempDir() throws -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PathDeckTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        return tmp
+    }
+
+    private func makeModel() -> WorkspaceModel {
+        let suite = UserDefaults(suiteName: "PathDeckTests-\(UUID().uuidString)")!
+        return WorkspaceModel(root: FileManager.default.homeDirectoryForCurrentUser, defaults: suite)
+    }
+
+    @Test func revealSingleNavigatesToParentAndSelects() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let file = tmp.appendingPathComponent("target.txt")
+        FileManager.default.createFile(atPath: file.path(percentEncoded: false), contents: nil)
+
+        let model = makeModel()
+        model.reveal([file])
+
+        #expect(model.currentURL == tmp.standardizedFileURL)
+        let expected = model.currentURL.appendingPathComponent("target.txt")
+        #expect(model.selectedURLs == [expected])
+        #expect(model.revealSelection == [expected])
+    }
+
+    @Test func revealMultipleSameParentSelectsAll() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let a = tmp.appendingPathComponent("a.txt")
+        let b = tmp.appendingPathComponent("b.txt")
+        FileManager.default.createFile(atPath: a.path(percentEncoded: false), contents: nil)
+        FileManager.default.createFile(atPath: b.path(percentEncoded: false), contents: nil)
+
+        let model = makeModel()
+        model.reveal([a, b])
+
+        #expect(model.currentURL == tmp.standardizedFileURL)
+        let ea = model.currentURL.appendingPathComponent("a.txt")
+        let eb = model.currentURL.appendingPathComponent("b.txt")
+        #expect(model.selectedURLs == [ea, eb])
+        #expect(model.revealSelection == [ea, eb])  // 全部选中，首项滚动定位
+    }
+
+    @Test func revealMixedParentsKeepsOnlyFirstParentItems() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let sub = tmp.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+        let a = tmp.appendingPathComponent("a.txt")        // 首项父目录 = tmp
+        let other = sub.appendingPathComponent("c.txt")    // 跨父目录，应被忽略
+        FileManager.default.createFile(atPath: a.path(percentEncoded: false), contents: nil)
+        FileManager.default.createFile(atPath: other.path(percentEncoded: false), contents: nil)
+
+        let model = makeModel()
+        model.reveal([a, other])
+
+        #expect(model.currentURL == tmp.standardizedFileURL)
+        #expect(model.selectedURLs == [model.currentURL.appendingPathComponent("a.txt")])
+    }
+
+    @Test func revealEmptyIsNoOp() throws {
+        let model = makeModel()
+        let before = model.currentURL
+        model.reveal([])
+        #expect(model.currentURL == before)
+        #expect(model.selectedURLs.isEmpty)
+    }
+
     // MARK: - Sort
 
     private static let testItems: [FileItem] = [

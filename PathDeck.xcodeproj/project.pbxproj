@@ -41,6 +41,7 @@
 			membershipExceptions = (
 				ChangeJournal/AGENTS.md,
 				FileWorkspace/AGENTS.md,
+				Info.plist,
 				Terminal/AGENTS.md,
 			);
 			target = BDA2E86E2FDCEFAF002B9364 /* PathDeck */;
@@ -442,6 +443,7 @@
 					"$(PROJECT_DIR)/vendor",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PathDeck/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -490,6 +492,7 @@
 					"$(PROJECT_DIR)/vendor",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PathDeck/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

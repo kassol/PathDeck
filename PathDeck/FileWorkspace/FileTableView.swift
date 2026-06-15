@@ -7,7 +7,8 @@ struct FileTableView: NSViewRepresentable {
     var items: [FileItem]
     var pendingRenameURL: URL?
     var changeIndicators: [String: ChangeEventType]
-    var scrollToURL: URL?
+    /// 命令式选择信号：选中这组 URL 对应的行并滚动到首项（单项即长度 1）。消费后由 `onClearRevealSelection` 清空。
+    var revealSelection: [URL]?
     var onOpen: (FileItem) -> Void
     var onSort: (String, Bool) -> Void
     var onSelectionChange: ([FileItem]) -> Void
@@ -15,7 +16,7 @@ struct FileTableView: NSViewRepresentable {
     var onRename: (URL, String) -> Bool
     var onNewFolder: () -> Void
     var onClearPendingRename: () -> Void
-    var onClearScrollToURL: () -> Void
+    var onClearRevealSelection: () -> Void
     var onSendPathToTerminal: ([URL]) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -101,15 +102,21 @@ struct FileTableView: NSViewRepresentable {
             }
         }
 
-        if let targetURL = scrollToURL {
+        if let targets = revealSelection, !targets.isEmpty {
             let itemsSnapshot = items
-            let clearScroll = onClearScrollToURL
+            let clearReveal = onClearRevealSelection
             DispatchQueue.main.async {
-                if let row = itemsSnapshot.firstIndex(where: { $0.url == targetURL }) {
-                    tv.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                    tv.scrollRowToVisible(row)
+                let rows = IndexSet(targets.compactMap { url in
+                    itemsSnapshot.firstIndex(where: { $0.url == url })
+                })
+                if !rows.isEmpty {
+                    tv.selectRowIndexes(rows, byExtendingSelection: false)
+                    // 滚动锚定 targets 首项（非 IndexSet 最小行）
+                    if let firstRow = itemsSnapshot.firstIndex(where: { $0.url == targets[0] }) {
+                        tv.scrollRowToVisible(firstRow)
+                    }
                 }
-                clearScroll()
+                clearReveal()
             }
         }
     }
