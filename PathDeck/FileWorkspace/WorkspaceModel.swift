@@ -24,7 +24,7 @@ final class WorkspaceModel {
     var pendingRenameURL: URL?
     var scrollToURL: URL?
     var isSearching: Bool = false
-    var isTerminalVisible: Bool = false
+    var isBottomPanelVisible: Bool = false
     var searchQuery: String = "" {
         didSet { applySearch() }
     }

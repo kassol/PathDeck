@@ -46,6 +46,7 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 
 ## 变更日志
 
+- 2026-06-15 S13 Terminal exit 自动关闭：`GhosttySurfaceView` 设 `wait_after_command=false`（跳过 "Press any key"），`surface` 改为 `private(set)` 供 engine 查询。`GhosttyApp.close_surface_cb` 发 `ghosttySurfaceDidClose` 通知。`GhosttyTerminalEngine` 新增 `onSessionClose` 回调 + 通知监听 → `ghostty_surface_process_exited` 反查 → 回调关闭 tab。`TerminalPanelView` 新增 `isActive` 参数，tab 切回时恢复键盘焦点。
 - 2026-06-14 S12 多 Terminal Tab 落地：`TerminalEngine` 协议从单 session 改为多 session API（`createSession`/`closeSession`/`terminalView(for:)`/`writeText(_:to:)`）。新增 `TerminalSession.swift` 值类型 + `TerminalTabBar.swift`（tab 切换/新建/关闭/双击重命名）。`GhosttyTerminalEngine` 管理 `[UUID: GhosttySurfaceView]` 字典，surface 延迟到首次 `terminalView(for:)` 时创建。`TerminalPanelView` 重写为 container NSView（子 view `isHidden` 切换，保活所有 session PTY）。关闭最后一个 tab → 终端面板隐藏。Send Path / 拖拽路由到 active tab。Debug/Release build + 82 个单测通过（新增 TerminalSessionTests ×4）。
 - 2026-06-13 S2 落地：libghostty 嵌入冒烟（`GhosttyApp` / `GhosttySurfaceView` / `TerminalSmokeView` + 独立终端窗口）。Debug/Release clean build + 链接单测通过；GUI 走查（渲染 + `echo`/`ls` 回显）通过，最脆弱假设证实、不启用 SwiftTerm fallback。实测本 xcframework 符号完整、`read_clipboard_cb` 正确导入为 `Bool`（无需 cmux 的 `unsafeBitCast` 兼容）。pbxproj 用 `membershipExceptions` 排除 `AGENTS.md` 出 bundle resource。
 - 2026-06-14 S9 落地：`TerminalEngine` 协议新增 `writeText`；`GhosttySurfaceView` 新增 `insertText`（调用 `ghostty_surface_text` C API）；`GhosttyTerminalEngine` 持有 surface view 弱引用实现 `writeText`。Context Bridge 文本注入能力就绪。

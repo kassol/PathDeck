@@ -46,10 +46,12 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal/Changes tab 共存。
 
 ```
 PathDeck/                  App 源码
+PathDeck/ContentView.swift NavigationSplitView 主布局 + 底部面板 tab 切换 + 终端/变化协调
+PathDeck/SidebarView.swift Sidebar（Favorites + Pinned）+ PinnedFolders 持久化
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图），见其 AGENTS.md
 PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议），见其 AGENTS.md
 PathDeck/ChangeJournal/    文件变化感知与记录模块（FSEvents + SQLite），见其 AGENTS.md
@@ -64,6 +66,16 @@ design/                    设计稿源文件（standalone HTML，可浏览器�
 ```
 
 规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal`、`ChangeJournal` 已落地）。
+
+### Sidebar 扩展路线
+
+当前 Sidebar 含两个 section：Favorites（Desktop/Documents/Downloads/Home/Applications，静态）+ Pinned（用户拖拽文件夹固定，右键移除，`PinnedFolders` + UserDefaults 持久化，`DropDelegate` 仅接受 `UTType.folder`）。参照 Finder 侧边栏，后续按优先级扩展：
+
+**P1**：iCloud Drive 入口 / Volumes & Locations（外置盘、网络盘，需评估 FSEvents 对非本地卷可靠性）/ Pinned 升级 security-scoped bookmark（当前 UserDefaults 存路径，重启后若目录被移动/删除会残留）/ Recents 入口
+
+**P2**：Tags（`NSURLTagNamesKey` 按颜色/名称分组）/ Smart Folders（保存搜索条件为虚拟文件夹）/ Pinned 拖拽重排序 / Badge 计数（目录下变化数量，`ChangeStore` 查询）
+
+**约束**：Sidebar 条目点击 = 导航（`model.navigate(to:)`），不做展开子树；文件树浏览是主区 FileTableView 职责。
 
 ## 常用命令
 
@@ -146,6 +158,7 @@ xcodebuild -deleteComponent MetalToolchain
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-15 **S13 窗口布局骨架**：NavigationSplitView 两列布局（sidebar Finder 风格 Favorites + detail 工作区）+ 底部面板 Terminal/Changes tab 共存（终端不再遮挡变化列表）+ BottomPanelBar 统一 tab bar + `isTerminalVisible` → `isBottomPanelVisible` 语义重命名 + Terminal exit 自动关闭 tab（`wait_after_command=false` + `close_surface_cb` → 通知 → 反查 `process_exited` → 回调关闭）。82 个单测通过。
 - 2026-06-14 **M2 闭合**（S8–S12）：Terminal Panel 嵌入主窗口 + Context Bridge（Send Path + 拖拽到终端）+ 变化面板增强（时间分组/类型过滤/点击定位/文件标记）+ 忽略规则（默认噪音过滤 + 用户自定义 glob）+ 多 Terminal Tab（独立 PTY/cwd/scrollback）。82 个单测通过。
 - 2026-06-14 **M1 闭合**（S4–S7）：路径导航/排序/隐藏文件 + 右键菜单文件操作 + Quick Look 预览 + 打开文件夹/搜索。56 个单测通过。
 - 2026-06-14 **M0 闭合**（S3）：FSEvents + SQLite 变化记录。

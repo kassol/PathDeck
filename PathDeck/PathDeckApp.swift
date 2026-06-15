@@ -31,8 +31,8 @@ private struct TerminalCommands: Commands {
 
     var body: some Commands {
         CommandMenu("终端") {
-            Button("切换终端面板") {
-                model?.isTerminalVisible.toggle()
+            Button("切换底部面板") {
+                model?.isBottomPanelVisible.toggle()
             }
             .keyboardShortcut("`", modifiers: .control)
 

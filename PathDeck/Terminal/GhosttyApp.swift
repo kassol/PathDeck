@@ -55,8 +55,9 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         runtime.read_clipboard_cb = { _, _, _ in false }
         runtime.confirm_read_clipboard_cb = { _, _, _, _ in }
         runtime.write_clipboard_cb = { _, _, _, _, _ in }
-        // 冒烟不处理关闭请求，由用户手动关窗。
-        runtime.close_surface_cb = { _, _ in }
+        runtime.close_surface_cb = { _, _ in
+            NotificationCenter.default.post(name: .ghosttySurfaceDidClose, object: nil)
+        }
 
         guard let created = ghostty_app_new(&runtime, config) else {
             NSLog("[PathDeck] ghostty_app_new failed")

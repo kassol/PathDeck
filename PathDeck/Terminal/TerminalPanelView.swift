@@ -4,6 +4,7 @@ struct TerminalPanelView: NSViewRepresentable {
     let activeSessionID: UUID?
     let sessionIDs: Set<UUID>
     let engine: any TerminalEngine
+    var isActive: Bool = true
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -14,8 +15,11 @@ struct TerminalPanelView: NSViewRepresentable {
     func updateNSView(_ container: NSView, context: Context) {
         let coordinator = context.coordinator
         let previousID = coordinator.lastActiveSessionID
-        let changed = activeSessionID != previousID
+        let sessionChanged = activeSessionID != previousID
+        let becameActive = isActive && !coordinator.lastIsActive
+        let becameInactive = !isActive && coordinator.lastIsActive
         coordinator.lastActiveSessionID = activeSessionID
+        coordinator.lastIsActive = isActive
 
         // Remove subviews for closed sessions
         for (objID, sessionID) in coordinator.viewToSession where !sessionIDs.contains(sessionID) {
@@ -25,13 +29,22 @@ struct TerminalPanelView: NSViewRepresentable {
             coordinator.viewToSession.removeValue(forKey: objID)
         }
 
-        guard changed else { return }
+        if becameInactive {
+            if let window = container.window, let responder = window.firstResponder,
+               let responderView = responder as? NSView, responderView.isDescendant(of: container) {
+                window.makeFirstResponder(nil)
+            }
+            return
+        }
 
-        // Hide only the previous active view
-        if let prevID = previousID,
-           let prevObjID = coordinator.viewToSession.first(where: { $0.value == prevID })?.key,
-           let prevView = container.subviews.first(where: { ObjectIdentifier($0) == prevObjID }) {
-            prevView.isHidden = true
+        guard sessionChanged || becameActive else { return }
+
+        if sessionChanged {
+            if let prevID = previousID,
+               let prevObjID = coordinator.viewToSession.first(where: { $0.value == prevID })?.key,
+               let prevView = container.subviews.first(where: { ObjectIdentifier($0) == prevObjID }) {
+                prevView.isHidden = true
+            }
         }
 
         guard let id = activeSessionID else { return }
@@ -50,6 +63,7 @@ struct TerminalPanelView: NSViewRepresentable {
 
     final class Coordinator {
         var lastActiveSessionID: UUID?
+        var lastIsActive: Bool = true
         var viewToSession: [ObjectIdentifier: UUID] = [:]
     }
 }

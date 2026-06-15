@@ -16,7 +16,7 @@ import Metal
 /// ③ 转发键盘事件。本视图从不调用 `ghostty_surface_draw`。详见 `Terminal/AGENTS.md`。
 final class GhosttySurfaceView: NSView {
     var initialCwd: URL?
-    private var surface: ghostty_surface_t?
+    private(set) var surface: ghostty_surface_t?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -101,6 +101,7 @@ final class GhosttySurfaceView: NSView {
         }
 
         var config = ghostty_surface_config_new()
+        config.wait_after_command = false
         config.platform_tag = GHOSTTY_PLATFORM_MACOS
         config.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
             nsview: Unmanaged.passUnretained(self).toOpaque()
@@ -213,6 +214,10 @@ final class GhosttySurfaceView: NSView {
         if flags.contains(.option) { raw |= GHOSTTY_MODS_ALT.rawValue }
         return ghostty_input_mods_e(rawValue: raw)
     }
+}
+
+extension Notification.Name {
+    static let ghosttySurfaceDidClose = Notification.Name("ghosttySurfaceDidClose")
 }
 
 private extension NSScreen {
