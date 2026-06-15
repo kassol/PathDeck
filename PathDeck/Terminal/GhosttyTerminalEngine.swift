@@ -3,21 +3,32 @@ import GhosttyKit
 
 final class GhosttyTerminalEngine: TerminalEngine {
     var onSessionClose: ((UUID) -> Void)?
+    var onCwdChange: ((UUID, URL) -> Void)?
 
+    private let engineID = ObjectIdentifier(UUID.self as Any.Type)
     private var surfaceViews: [UUID: GhosttySurfaceView] = [:]
     private var sessionCwds: [UUID: URL] = [:]
     private var observer: NSObjectProtocol?
+    private let registrationID: ObjectIdentifier
 
     init() {
+        let sentinel = NSObject()
+        registrationID = ObjectIdentifier(sentinel)
+
         observer = NotificationCenter.default.addObserver(
             forName: .ghosttySurfaceDidClose, object: nil, queue: .main
         ) { [weak self] _ in
             self?.handleSurfaceClose()
         }
+
+        GhosttyApp.shared.registerPwdHandler(id: registrationID) { [weak self] surface, pwd in
+            self?.handlePwdChange(surface: surface, pwd: pwd)
+        }
     }
 
     deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        GhosttyApp.shared.unregisterPwdHandler(id: registrationID)
     }
 
     func createSession(cwd: URL) -> UUID {
@@ -50,6 +61,23 @@ final class GhosttyTerminalEngine: TerminalEngine {
                 onSessionClose?(id)
                 return
             }
+        }
+    }
+
+    private func handlePwdChange(surface: ghostty_surface_t, pwd: String) {
+        for (id, view) in surfaceViews {
+            guard view.surface == surface else { continue }
+            let url: URL
+            if pwd.hasPrefix("file://") {
+                guard let parsed = URL(string: pwd) else { return }
+                url = URL(fileURLWithPath: parsed.path).standardizedFileURL
+            } else if let decoded = pwd.removingPercentEncoding {
+                url = URL(fileURLWithPath: decoded).standardizedFileURL
+            } else {
+                url = URL(fileURLWithPath: pwd).standardizedFileURL
+            }
+            onCwdChange?(id, url)
+            return
         }
     }
 }

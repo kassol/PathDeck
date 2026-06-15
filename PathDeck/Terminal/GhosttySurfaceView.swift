@@ -107,20 +107,28 @@ final class GhosttySurfaceView: NSView {
             nsview: Unmanaged.passUnretained(self).toOpaque()
         ))
         config.scale_factor = scaleFactor
+        config.font_size = Float(TerminalDefaults.fontSize)
 
-        // 嵌套 withCString 保证所有 C 指针在 ghostty_surface_new 调用期间有效。
-        // env 注入 TERM=xterm-256color 规避缺失的 xterm-ghostty terminfo（决策 D-S2-1）。
         let cwdPath = (initialCwd ?? FileManager.default.homeDirectoryForCurrentUser).path
-        "TERM".withCString { termKey in
-            "xterm-256color".withCString { termValue in
-                var envVars = [ghostty_env_var_s(key: termKey, value: termValue)]
-                cwdPath.withCString { cCwd in
-                    config.working_directory = cCwd
-                    envVars.withUnsafeMutableBufferPointer { buffer in
-                        config.env_vars = buffer.baseAddress
-                        config.env_var_count = buffer.count
-                        surface = ghostty_surface_new(app, &config)
-                    }
+        let shellPath = TerminalDefaults.resolvedShell
+
+        var envPairs: [(key: String, value: String)] = [("TERM", "xterm-256color")]
+        envPairs.append(contentsOf: ShellIntegration.envVars(for: shellPath))
+
+        let keys = envPairs.map { strdup($0.key)! }
+        let values = envPairs.map { strdup($0.value)! }
+        defer { keys.forEach { free($0) }; values.forEach { free($0) } }
+
+        var envVars = zip(keys, values).map { ghostty_env_var_s(key: $0, value: $1) }
+
+        cwdPath.withCString { cCwd in
+            shellPath.withCString { cShell in
+                config.working_directory = cCwd
+                config.command = cShell
+                envVars.withUnsafeMutableBufferPointer { buffer in
+                    config.env_vars = buffer.baseAddress
+                    config.env_var_count = buffer.count
+                    surface = ghostty_surface_new(app, &config)
                 }
             }
         }

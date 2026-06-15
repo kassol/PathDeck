@@ -4,6 +4,10 @@ import SwiftUI
 struct PathDeckApp: App {
     static let terminalWindowID = "terminal-smoke"
 
+    init() {
+        ShellIntegration.prepare()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -12,6 +16,10 @@ struct PathDeckApp: App {
             TerminalCommands()
             FileCommands()
             ViewCommands()
+        }
+
+        Settings {
+            SettingsView()
         }
 
         // S2 冒烟：独立终端窗口，与文件列表主窗口隔离。
@@ -105,9 +113,15 @@ private struct FileCommands: Commands {
 /// 显示菜单命令：隐藏文件切换 + 复制路径。
 private struct ViewCommands: Commands {
     @FocusedValue(\.workspaceModel) private var model
+    @FocusedValue(\.togglePreviewPaneAction) private var togglePreviewPane
 
     var body: some Commands {
         CommandMenu("显示") {
+            Button("切换预览面板") {
+                togglePreviewPane?()
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+
             Button(model?.showHidden == true ? "隐藏隐藏文件" : "显示隐藏文件") {
                 model?.toggleHidden()
             }

@@ -6,33 +6,87 @@ import AppKit
 final class PinnedFolders {
     static let shared = PinnedFolders()
 
-    private let key = "pinnedFolders"
+    private let bookmarkKey = "pinnedFolderBookmarks"
+    private let legacyKey = "pinnedFolders"
     private(set) var items: [URL] = []
+    private var bookmarks: [Data] = []
 
     private init() {
-        let paths = UserDefaults.standard.stringArray(forKey: key) ?? []
-        items = paths.map { URL(fileURLWithPath: $0) }
+        if let stored = UserDefaults.standard.array(forKey: bookmarkKey) as? [Data] {
+            loadFromBookmarks(stored)
+        } else if let paths = UserDefaults.standard.stringArray(forKey: legacyKey) {
+            migrateLegacy(paths)
+        }
     }
 
     func add(_ url: URL) {
         let standardized = url.standardizedFileURL
         guard !items.contains(where: { $0.standardizedFileURL == standardized }) else { return }
+        guard let data = createBookmark(for: standardized) else { return }
         items.append(standardized)
+        bookmarks.append(data)
         persist()
     }
 
     func remove(_ url: URL) {
         let standardized = url.standardizedFileURL
-        items.removeAll { $0.standardizedFileURL == standardized }
-        persist()
+        if let idx = items.firstIndex(where: { $0.standardizedFileURL == standardized }) {
+            items.remove(at: idx)
+            bookmarks.remove(at: idx)
+            persist()
+        }
     }
 
     func contains(_ url: URL) -> Bool {
         items.contains { $0.standardizedFileURL == url.standardizedFileURL }
     }
 
+    private func loadFromBookmarks(_ stored: [Data]) {
+        var resolvedURLs: [URL] = []
+        var resolvedBookmarks: [Data] = []
+        for data in stored {
+            guard let (url, refreshed) = resolveBookmark(data) else { continue }
+            resolvedURLs.append(url)
+            resolvedBookmarks.append(refreshed ?? data)
+        }
+        items = resolvedURLs
+        bookmarks = resolvedBookmarks
+        if stored.count != resolvedBookmarks.count || zip(stored, resolvedBookmarks).contains(where: { $0 != $1 }) {
+            persist()
+        }
+    }
+
+    private func migrateLegacy(_ paths: [String]) {
+        for path in paths {
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)),
+                  let data = createBookmark(for: url) else { continue }
+            items.append(url)
+            bookmarks.append(data)
+        }
+        persist()
+        UserDefaults.standard.removeObject(forKey: legacyKey)
+    }
+
+    private func createBookmark(for url: URL) -> Data? {
+        try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    private func resolveBookmark(_ data: Data) -> (URL, Data?)? {
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return nil }
+        guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return nil }
+        let refreshed = isStale ? createBookmark(for: url) : nil
+        return (url.standardizedFileURL, refreshed)
+    }
+
     private func persist() {
-        UserDefaults.standard.set(items.map { $0.path(percentEncoded: false) }, forKey: key)
+        UserDefaults.standard.set(bookmarks, forKey: bookmarkKey)
     }
 }
 

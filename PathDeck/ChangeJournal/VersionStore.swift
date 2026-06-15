@@ -13,8 +13,23 @@ struct FileVersion: Identifiable, Sendable {
 }
 
 final class VersionStore {
-    static let maxVersionsPerFile = 10
-    static let maxFileSize = 1_048_576 // 1MB
+    static let defaultMaxVersionsPerFile = 10
+    static let defaultMaxFileSizeKB = 1024
+
+    static var maxVersionsPerFile: Int {
+        let val = UserDefaults.standard.integer(forKey: "versionMaxCount")
+        return val > 0 ? val : defaultMaxVersionsPerFile
+    }
+
+    static var maxFileSize: Int {
+        let val = UserDefaults.standard.integer(forKey: "versionMaxSizeKB")
+        return (val > 0 ? val : defaultMaxFileSizeKB) * 1024
+    }
+
+    static var isEnabled: Bool {
+        let key = "versionsEnabled"
+        return UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
+    }
 
     private let dbQueue: DatabaseQueue
 
@@ -179,6 +194,7 @@ final class VersionStore {
     }
 
     static func isEligible(url: URL) -> Bool {
+        guard isEnabled else { return false }
         guard let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey]),
               let contentType = values.contentType,
               let fileSize = values.fileSize else { return false }

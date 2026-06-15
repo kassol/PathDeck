@@ -12,11 +12,11 @@
 |---|---|
 | `ChangeEvent.swift` | 变化事件值类型 model（`Sendable`，不依赖 GRDB）+ `ChangeTimeGroup` 枚举 + `grouped()` 时间分组纯函数 + `terminalSessionID` 归因字段 |
 | `ChangeStore.swift` | GRDB 封装：WAL 模式 SQLite（`changes.db`）初始化、schema migration（v1+v2）、批量写入（含终端归因）、按目录查询 |
-| `VersionStore.swift` | GRDB 封装：独立 SQLite（`versions.db`）文件版本快照存储、hash 去重、per-file 上限清理、eligibility 判定、content blob 读取 |
+| `VersionStore.swift` | GRDB 封装：独立 SQLite（`versions.db`）文件版本快照存储、hash 去重、per-file 上限清理、eligibility 判定、content blob 读取。大小阈值 / 保留条数 / 启用开关从 `@AppStorage` 动态读取 |
 | `DiffEngine.swift` | Myers diff 算法：逐行 LCS 对比，产出 `[DiffLine]`（added/deleted/unchanged + 行号） |
 | `DiffView.swift` | SwiftUI inline diff 视图 + 恢复上一版确认流程（恢复前自动快照保证可撤销）|
 | `FSWatcher.swift` | FSEvents 封装（`nonisolated`，后台 DispatchQueue）：监听指定目录、事件 flag 分类、跨批次时间窗口聚合（0.5s debounce + `mergeType` 合并）、回调通知 |
-| `ChangeListView.swift` | SwiftUI 变化列表视图：类型过滤 + 时间分组 + 行点击定位 + 忽略规则编辑 popover + 终端归因图标 + 版本快照图标（可点击触发 diff） |
+| `ChangeListView.swift` | SwiftUI 变化列表视图：类型过滤 + 时间分组 + 行点击定位 + `IgnoreRulesPopover`（internal 可见性，Settings 复用）+ 终端归因图标 + 版本快照图标（可点击触发 diff） |
 | `IgnoreRules.swift` | 忽略规则工具：默认模式 + 用户自定义 glob（UserDefaults）+ `fnmatch` 匹配 |
 
 ## 模块规范
@@ -37,6 +37,7 @@
 
 ## 变更日志
 
+- 2026-06-15 S16 `VersionStore` 配置化：`maxFileSize` / `maxVersionsPerFile` / `isEnabled` 从 `UserDefaults` 动态读取（Settings 窗口对应 `versionMaxSizeKB` / `versionMaxCount` / `versionsEnabled`）。`IgnoreRulesPopover` 从 `private` 改为 `internal`（Settings 窗口复用）。
 - 2026-06-15 S15 Diff View + Restore + FSWatcher 聚合重写：新增 `DiffEngine`（Myers diff）+ `DiffView`（inline diff + restore，`.task(id: path)` 响应路径切换，restore 前快照失败中止）；`VersionStore` 扩展 `versionContent` / `latestVersionWithContent` / `previousVersionWithContent`（跳过与当前内容相同 hash 的版本）；`ChangeListView` 行导航与版本图标拆为独立点击区域；`FSWatcher` 从单批次 `seen` 去重重写为跨批次时间窗口聚合（`pending` 字典 + 0.5s debounce + `mergeType` 6 种组合）+ `classify` 修正 `renamed+exists → modified`；`IgnoreRules` 新增 `*.sb-*` / `._*` / `*.tmp` 默认规则；`WorkspaceModel` 移除 `recentEventKeys` 补丁式去重。106 个单测通过（+16）。
 - 2026-06-15 S14 终端活跃期间变化归因 + 轻量文件版本快照：`ChangeEvent` 新增 `terminalSessionID` 归因字段；`ChangeStore` v2 migration 加列 + `recordBatch` 接受 `terminalSessionID` 参数；新增 `VersionStore`（独立 `versions.db`，`saveVersion` hash 去重 + per-file 10 版本上限自动清理 + `isEligible` 文本类 ≤1MB 判定）；`ChangeListView` 新增终端归因图标 + 版本快照图标 + `versionedPaths` 参数；`WorkspaceModel` 新增 `activeTerminalSessionID` / `versionStore` / `versionedPaths` / `snapshotIfEligible`。M3 闭合，M4 基础落地。90 个单测通过（新增 ChangeStoreTests ×3 + VersionStoreTests ×5）。
 - 2026-06-14 S11 变化忽略规则落地：新增 `IgnoreRules.swift`（默认 16 个噪音模式 + 用户自定义 glob + `fnmatch(FNM_CASEFOLD)` 匹配）。`WorkspaceModel.handleFSEvents` 过滤新事件不入库；`refreshChanges` 过滤历史事件不显示 + `hiddenCount` 属性。`ChangeListView` 新增齿轮按钮 + `IgnoreRulesPopover`（查看/编辑规则）+ 底部「已隐藏 N 项」指示。Debug/Release build + 78 个单测通过（新增 IgnoreRulesTests ×6）。

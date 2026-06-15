@@ -4,7 +4,7 @@
 
 ## 职责
 
-Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder）、Quick Look 预览、打开任意文件夹、文件名搜索、Send Path to Terminal、拖拽文件到终端、文件变化标记。后续扩展：多视图模式、内容搜索。
+Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder）、Quick Look 预览、打开任意文件夹、文件名搜索、Send Path to Terminal、拖拽文件到终端、文件变化标记、Preview Pane（右侧文件预览面板）。后续扩展：多视图模式、内容搜索。
 
 ## 目录结构
 
@@ -17,6 +17,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
 | `ShellEscape.swift` | POSIX shell 路径转义纯函数（单引号包裹，Send Path to Terminal 用） |
+| `PreviewPane.swift` | 右侧文件预览面板：QLThumbnail 缩略图 + 元数据表（Kind/Size/Where/Created/Modified）+ 版本状态 + Quick Actions（Send Path / Reveal in Finder）；⌘⇧P toggle |
 
 ## 模块规范
 
@@ -27,11 +28,12 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 依赖关系
 
-- 依赖：Foundation、AppKit、SwiftUI、Observation、QuickLookUI、UniformTypeIdentifiers；`WorkspaceModel` 持有 ChangeJournal 模块的 `FSWatcher` + `ChangeStore` + `VersionStore` + `IgnoreRules`（同 target 内跨模块依赖）。
+- 依赖：Foundation、AppKit、SwiftUI、Observation、QuickLookUI、QuickLookThumbnailing、UniformTypeIdentifiers；`WorkspaceModel` 持有 ChangeJournal 模块的 `FSWatcher` + `ChangeStore` + `VersionStore` + `IgnoreRules`（同 target 内跨模块依赖）。
 - 被依赖：`ContentView` 装载 `FileTableView` 与 `WorkspaceModel`。
 
 ## 变更日志
 
+- 2026-06-15 S16 新增 `PreviewPane.swift`（右侧预览面板：QLThumbnail + 元数据 + 版本状态 + Quick Actions）；`ContentView` 改为 HStack 分栏；⌘⇧P toggle。`WorkspaceModel.handleFSEvents` 新增 `changesEnabled` 开关守卫。
 - 2026-06-15 S14 WorkspaceModel 集成终端归因 + 版本快照：新增 `activeTerminalSessionID`（由 ContentView 从终端模块同步）传递给 `ChangeStore.recordBatch`；新增 `versionStore`（VersionStore）+ `versionedPaths`（Set）+ `snapshotIfEligible`（modified/added 事件触发，文本类 ≤1MB）。
 - 2026-06-15 S13 `isTerminalVisible` → `isBottomPanelVisible` 语义重命名（底部面板同时承载终端和变化列表）。
 - 2026-06-14 S10 拖拽到终端 + 变化感知增强：`FileTableView` 新增 `pasteboardWriterForRow`（文件行可拖出）+ name column 变化标记色点（绿=新增/橙=修改，30s 淡出）+ `scrollToURL` 滚动定位。`WorkspaceModel` 新增 `changeIndicators`（FSEvents 触发 → 30s Timer 清除）+ `scrollToURL`。`ContentView` 终端面板加 `.onDrop`（NSLock 保护并发 append）接收文件拖放；变化条目点击直接选中+滚动。6 个新单测（ChangeTimeGroup×6），72 个总计全通过。

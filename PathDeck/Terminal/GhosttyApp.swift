@@ -27,8 +27,27 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
     private let tickLock = NSLock()
     private var tickScheduled = false
 
+    private let pwdLock = NSLock()
+    private var pwdHandlers: [ObjectIdentifier: (ghostty_surface_t, String) -> Void] = [:]
+    private var titleHandlers: [ObjectIdentifier: (ghostty_surface_t, String) -> Void] = [:]
+
+    func registerPwdHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, String) -> Void) {
+        pwdLock.lock(); defer { pwdLock.unlock() }
+        pwdHandlers[id] = handler
+    }
+
+    func unregisterPwdHandler(id: ObjectIdentifier) {
+        pwdLock.lock(); defer { pwdLock.unlock() }
+        pwdHandlers.removeValue(forKey: id)
+        titleHandlers.removeValue(forKey: id)
+    }
+
+    func registerTitleHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, String) -> Void) {
+        pwdLock.lock(); defer { pwdLock.unlock() }
+        titleHandlers[id] = handler
+    }
+
     private init() {
-        // 即便启动环境设了 NO_COLOR，也让终端内 TUI 能用色。
         if getenv("NO_COLOR") != nil { unsetenv("NO_COLOR") }
 
         guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
@@ -48,10 +67,9 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         runtime.wakeup_cb = { userdata in
             GhosttyApp.runtimeApp(from: userdata)?.scheduleTick()
         }
-        // 冒烟不处理任何 action（reload config / open URL / 新窗口等一律不响应）。
-        runtime.action_cb = { _, _, _ in false }
-        // 本 xcframework 把该回调正确导入为返回 Bool，直接赋字面闭包即可。
-        // （若换 GhosttyKit 构建把它导入成 Void，需改用顶层函数 + unsafeBitCast 兼容，见 Terminal/AGENTS.md。）
+        runtime.action_cb = { _, target, action in
+            GhosttyApp.shared.handleAction(target: target, action: action)
+        }
         runtime.read_clipboard_cb = { _, _, _ in false }
         runtime.confirm_read_clipboard_cb = { _, _, _, _ in }
         runtime.write_clipboard_cb = { _, _, _, _, _ in }
@@ -66,6 +84,37 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
             return
         }
         self.app = created
+    }
+
+    private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
+        guard target.tag == GHOSTTY_TARGET_SURFACE else { return false }
+        let surface = target.target.surface
+        switch action.tag {
+        case GHOSTTY_ACTION_PWD:
+            if let cStr = action.action.pwd.pwd, let surface {
+                let pwd = String(cString: cStr)
+                pwdLock.lock()
+                let handlers = pwdHandlers.values
+                pwdLock.unlock()
+                DispatchQueue.main.async {
+                    for handler in handlers { handler(surface, pwd) }
+                }
+            }
+            return true
+        case GHOSTTY_ACTION_SET_TITLE:
+            if let cStr = action.action.set_title.title, let surface {
+                let title = String(cString: cStr)
+                pwdLock.lock()
+                let handlers = titleHandlers.values
+                pwdLock.unlock()
+                DispatchQueue.main.async {
+                    for handler in handlers { handler(surface, title) }
+                }
+            }
+            return true
+        default:
+            return false
+        }
     }
 
     /// 合并多次 wakeup 为主线程一次 tick。wakeup 在 I/O 线程高频触发，禁止每次都 tick。
@@ -95,7 +144,6 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
     }
 
     /// 链接冒烟用：返回 libghostty 版本号。
-    /// 证明 GhosttyKit 已正确链接、C 符号可从 Swift 调用，且不依赖窗口/GPU。
     static func libghosttyVersion() -> String {
         let info = ghostty_info()
         guard let version = info.version, info.version_len > 0 else { return "" }

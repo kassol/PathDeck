@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 extension FocusedValues {
     @Entry var workspaceModel: WorkspaceModel?
     @Entry var sendPathAction: (([URL]) -> Void)?
+    @Entry var togglePreviewPaneAction: (() -> Void)?
 }
 
 enum BottomPanelTab: Hashable {
@@ -19,6 +20,7 @@ struct ContentView: View {
     @State private var terminalSessions: [TerminalSession] = []
     @State private var activeTerminalID: UUID?
     @State private var activeBottomTab: BottomPanelTab = .terminal
+    @State private var isPreviewPaneVisible: Bool = true
 
     private let terminalMinHeight: CGFloat = 100
     private let terminalMaxFraction: CGFloat = 0.6
@@ -52,6 +54,14 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
+                        isPreviewPaneVisible.toggle()
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .help(isPreviewPaneVisible ? "隐藏预览面板" : "显示预览面板")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
                         model.isBottomPanelVisible.toggle()
                     } label: {
                         Image(systemName: "terminal")
@@ -70,6 +80,9 @@ struct ContentView: View {
             .focusedSceneValue(\.workspaceModel, model)
             .focusedSceneValue(\.sendPathAction) { urls in
                 sendPathToTerminal(urls)
+            }
+            .focusedSceneValue(\.togglePreviewPaneAction) {
+                isPreviewPaneVisible.toggle()
             }
             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
                 guard let provider = providers.first else { return false }
@@ -90,6 +103,11 @@ struct ContentView: View {
         .onAppear {
             terminalEngine.onSessionClose = { [self] id in
                 closeTerminalTab(id)
+            }
+            terminalEngine.onCwdChange = { [self] id, url in
+                if let idx = terminalSessions.firstIndex(where: { $0.id == id }) {
+                    terminalSessions[idx].currentCwd = url
+                }
             }
         }
     }
@@ -122,27 +140,46 @@ struct ContentView: View {
 
             Divider()
 
-            FileTableView(
-                items: model.items,
-                pendingRenameURL: model.pendingRenameURL,
-                changeIndicators: model.changeIndicators,
-                scrollToURL: model.scrollToURL,
-                onOpen: { model.enter($0) },
-                onSort: { column, ascending in
-                    model.applySort(column: column, ascending: ascending)
-                },
-                onSelectionChange: { items in
-                    model.selectedURLs = items.map(\.url)
-                },
-                onTrash: { model.trashItems() },
-                onRename: { model.renameItem(from: $0, to: $1) },
-                onNewFolder: { model.newFolder() },
-                onClearPendingRename: { model.pendingRenameURL = nil },
-                onClearScrollToURL: { model.scrollToURL = nil },
-                onSendPathToTerminal: { urls in
-                    sendPathToTerminal(urls)
+            HStack(spacing: 0) {
+                FileTableView(
+                    items: model.items,
+                    pendingRenameURL: model.pendingRenameURL,
+                    changeIndicators: model.changeIndicators,
+                    scrollToURL: model.scrollToURL,
+                    onOpen: { model.enter($0) },
+                    onSort: { column, ascending in
+                        model.applySort(column: column, ascending: ascending)
+                    },
+                    onSelectionChange: { items in
+                        model.selectedURLs = items.map(\.url)
+                    },
+                    onTrash: { model.trashItems() },
+                    onRename: { model.renameItem(from: $0, to: $1) },
+                    onNewFolder: { model.newFolder() },
+                    onClearPendingRename: { model.pendingRenameURL = nil },
+                    onClearScrollToURL: { model.scrollToURL = nil },
+                    onSendPathToTerminal: { urls in
+                        sendPathToTerminal(urls)
+                    }
+                )
+
+                if isPreviewPaneVisible {
+                    Divider()
+                    PreviewPane(
+                        selectedURLs: model.selectedURLs,
+                        currentDirectory: model.currentURL,
+                        versionedPaths: model.versionedPaths,
+                        onDiff: { path in
+                            if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
+                            activeBottomTab = .diff(path: path)
+                        },
+                        onSendPath: { urls in sendPathToTerminal(urls) },
+                        onRevealInFinder: { url in
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        }
+                    )
                 }
-            )
+            }
 
             // Bottom panel
             if model.isBottomPanelVisible {
@@ -159,7 +196,8 @@ struct ContentView: View {
                     activeTerminalID: $activeTerminalID,
                     changeCount: model.changes.count,
                     onNewTerminalTab: { createTerminalTab() },
-                    onCloseTerminalTab: { closeTerminalTab($0) }
+                    onCloseTerminalTab: { closeTerminalTab($0) },
+                    onNavigateToCwd: { url in model.navigate(to: url) }
                 )
             }
 
@@ -295,6 +333,7 @@ private struct BottomPanelBar: View {
     var changeCount: Int
     var onNewTerminalTab: () -> Void
     var onCloseTerminalTab: (UUID) -> Void
+    var onNavigateToCwd: ((URL) -> Void)?
 
     private var isDiff: Bool {
         if case .diff = activeTab { return true }
@@ -308,7 +347,8 @@ private struct BottomPanelBar: View {
                     sessions: $terminalSessions,
                     activeID: $activeTerminalID,
                     onNewTab: onNewTerminalTab,
-                    onCloseTab: onCloseTerminalTab
+                    onCloseTab: onCloseTerminalTab,
+                    onNavigateToCwd: onNavigateToCwd
                 )
             } else {
                 Button { activeTab = .terminal } label: {

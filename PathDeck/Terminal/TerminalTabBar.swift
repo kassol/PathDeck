@@ -5,6 +5,7 @@ struct TerminalTabBar: View {
     @Binding var activeID: UUID?
     var onNewTab: () -> Void
     var onCloseTab: (UUID) -> Void
+    var onNavigateToCwd: ((URL) -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -13,7 +14,8 @@ struct TerminalTabBar: View {
                     session: $session,
                     isActive: session.id == activeID,
                     onSelect: { activeID = session.id },
-                    onClose: { onCloseTab(session.id) }
+                    onClose: { onCloseTab(session.id) },
+                    onNavigateToCwd: onNavigateToCwd
                 )
             }
 
@@ -39,6 +41,7 @@ private struct TabItem: View {
     let isActive: Bool
     var onSelect: () -> Void
     var onClose: () -> Void
+    var onNavigateToCwd: ((URL) -> Void)?
 
     @State private var isEditing = false
     @State private var editingTitle = ""
@@ -56,6 +59,14 @@ private struct TabItem: View {
                 Text(session.title)
                     .font(.system(size: 11))
                     .lineLimit(1)
+                if isActive {
+                    Text(session.currentCwd.lastPathComponent)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .onTapGesture { onNavigateToCwd?(session.currentCwd) }
+                        .help(session.currentCwd.path(percentEncoded: false))
+                }
             }
 
             Button(action: onClose) {

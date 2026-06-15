@@ -259,9 +259,14 @@ final class WorkspaceModel {
             return !IgnoreRules.shouldIgnore(fileName: fileName)
         }
 
+        let changesEnabled = UserDefaults.standard.object(forKey: "changesEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "changesEnabled")
+
         let dir = currentURL.path(percentEncoded: false)
-        let batch = accepted.map { (path: $0.path, type: $0.type, directory: dir) }
-        try? changeStore?.recordBatch(batch, terminalSessionID: activeTerminalSessionID)
+        if changesEnabled {
+            let batch = accepted.map { (path: $0.path, type: $0.type, directory: dir) }
+            try? changeStore?.recordBatch(batch, terminalSessionID: activeTerminalSessionID)
+        }
 
         for event in accepted where event.type == .added || event.type == .modified {
             snapshotIfEligible(path: event.path)

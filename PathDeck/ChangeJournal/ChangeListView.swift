@@ -94,8 +94,8 @@ struct ChangeListView: View {
 
 // MARK: - Ignore Rules Popover
 
-private struct IgnoreRulesPopover: View {
-    var onRulesChanged: () -> Void
+struct IgnoreRulesPopover: View {
+    var onRulesChanged: (() -> Void)?
 
     @State private var userPatterns: [String] = IgnoreRules.userPatterns
     @State private var newPattern: String = ""
@@ -158,13 +158,13 @@ private struct IgnoreRulesPopover: View {
         userPatterns.append(trimmed)
         IgnoreRules.userPatterns = userPatterns
         newPattern = ""
-        onRulesChanged()
+        onRulesChanged?()
     }
 
     private func removePattern(_ pattern: String) {
         userPatterns.removeAll { $0 == pattern }
         IgnoreRules.userPatterns = userPatterns
-        onRulesChanged()
+        onRulesChanged?()
     }
 }
 
