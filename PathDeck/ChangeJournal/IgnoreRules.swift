@@ -6,8 +6,9 @@ struct IgnoreRules {
         ".DS_Store", ".git", "node_modules",
         "build", "dist", ".cache",
         "venv", "__pycache__",
-        "*.swp", "*.swo",
+        "*.swp", "*.swo", "*.tmp",
         ".Spotlight-V100", ".Trashes", ".fseventsd",
+        "*.sb-*", "._*",
     ]
 
     private static let userDefaultsKey = "ChangeJournalIgnorePatterns"

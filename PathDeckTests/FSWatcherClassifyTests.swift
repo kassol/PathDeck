@@ -36,13 +36,23 @@ struct FSWatcherClassifyTests {
         #expect(FSWatcher.classify(flag: f, path: path) == .deleted)
     }
 
-    @Test func renamedExistingFileClassifiesAsAdded() throws {
+    @Test func renamedExistingFileClassifiesAsModified() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("pd-test-\(UUID().uuidString)")
         FileManager.default.createFile(atPath: tmp.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let f = flag(kFSEventStreamEventFlagItemRenamed, kFSEventStreamEventFlagItemIsFile)
+        #expect(FSWatcher.classify(flag: f, path: tmp.path) == .modified)
+    }
+
+    @Test func renamedCreatedExistingFileClassifiesAsAdded() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pd-test-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tmp.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let f = flag(kFSEventStreamEventFlagItemRenamed, kFSEventStreamEventFlagItemCreated, kFSEventStreamEventFlagItemIsFile)
         #expect(FSWatcher.classify(flag: f, path: tmp.path) == .added)
     }
 

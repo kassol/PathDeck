@@ -56,9 +56,8 @@ final class WorkspaceModel {
 
     private var watcher: FSWatcher?
     private var changeStore: ChangeStore?
-    private var versionStore: VersionStore?
+    private(set) var versionStore: VersionStore?
     private var indicatorTimers: [String: Timer] = [:]
-    private var recentEventKeys: [String: Date] = [:]
 
     init(root: URL? = nil) {
         if let root {
@@ -255,19 +254,10 @@ final class WorkspaceModel {
     }
 
     private func handleFSEvents(_ events: [(path: String, type: ChangeEventType)]) {
-        let now = Date()
         let accepted = events.filter { event in
             let fileName = URL(fileURLWithPath: event.path).lastPathComponent
-            if IgnoreRules.shouldIgnore(fileName: fileName) { return false }
-            let key = "\(event.path)|\(event.type)"
-            if let last = recentEventKeys[key],
-               now.timeIntervalSince(last) < 1.0 { return false }
-            return true
+            return !IgnoreRules.shouldIgnore(fileName: fileName)
         }
-        for event in accepted {
-            recentEventKeys["\(event.path)|\(event.type)"] = now
-        }
-        recentEventKeys = recentEventKeys.filter { now.timeIntervalSince($0.value) < 5.0 }
 
         let dir = currentURL.path(percentEncoded: false)
         let batch = accepted.map { (path: $0.path, type: $0.type, directory: dir) }

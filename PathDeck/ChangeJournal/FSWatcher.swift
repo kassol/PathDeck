@@ -6,6 +6,10 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     private let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
     private let handler: @Sendable ([(path: String, type: ChangeEventType)]) -> Void
 
+    private var pending: [String: ChangeEventType] = [:]
+    private var flushWork: DispatchWorkItem?
+    private static let coalesceWindow: TimeInterval = 0.5
+
     init(handler: @escaping @Sendable ([(path: String, type: ChangeEventType)]) -> Void) {
         self.handler = handler
     }
@@ -54,6 +58,13 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         FSEventStreamRelease(stream)
         self.stream = nil
         watchedDirectory = nil
+        flushWork?.cancel()
+        flushWork = nil
+        if !pending.isEmpty {
+            let batch = pending.map { (path: $0.key, type: $0.value) }
+            pending.removeAll()
+            handler(batch)
+        }
     }
 
     deinit {
@@ -62,8 +73,6 @@ nonisolated final class FSWatcher: @unchecked Sendable {
 
     fileprivate func handleRawEvents(paths: [String], flags: [FSEventStreamEventFlags]) {
         guard let watchedDir = watchedDirectory else { return }
-        var classified: [(path: String, type: ChangeEventType)] = []
-        var seen = Set<String>()
 
         for (path, flag) in zip(paths, flags) {
             let isFile = flag & UInt32(kFSEventStreamEventFlagItemIsFile) != 0
@@ -72,12 +81,40 @@ nonisolated final class FSWatcher: @unchecked Sendable {
             let parent = (path as NSString).deletingLastPathComponent
             guard parent == watchedDir else { continue }
             guard let type = Self.classify(flag: flag, path: path) else { continue }
-            guard seen.insert(path).inserted else { continue }
-            classified.append((path: path, type: type))
+            pending[path] = Self.mergeType(existing: pending[path], new: type)
         }
 
-        guard !classified.isEmpty else { return }
-        handler(classified)
+        guard !pending.isEmpty else { return }
+        scheduleFlush()
+    }
+
+    private func scheduleFlush() {
+        flushWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.flush()
+        }
+        flushWork = work
+        queue.asyncAfter(deadline: .now() + Self.coalesceWindow, execute: work)
+    }
+
+    private func flush() {
+        guard !pending.isEmpty else { return }
+        let batch = pending.map { (path: $0.key, type: $0.value) }
+        pending.removeAll()
+        handler(batch)
+    }
+
+    static func mergeType(existing: ChangeEventType?, new: ChangeEventType) -> ChangeEventType {
+        guard let existing else { return new }
+        switch (existing, new) {
+        case (.added, .modified): return .added
+        case (.added, .deleted): return .deleted
+        case (.modified, .added): return .modified
+        case (.modified, .deleted): return .deleted
+        case (.deleted, .added): return .modified
+        case (.deleted, .modified): return .modified
+        default: return existing
+        }
     }
 
     static func classify(flag: FSEventStreamEventFlags, path: String) -> ChangeEventType? {
@@ -88,7 +125,9 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         let exists = FileManager.default.fileExists(atPath: path)
 
         if removed && !exists { return .deleted }
-        if renamed { return exists ? .added : .deleted }
+        if renamed && !exists { return .deleted }
+        if renamed && created && exists { return .added }
+        if renamed && exists { return .modified }
         if created && exists { return .added }
         if modified && exists { return .modified }
         return nil

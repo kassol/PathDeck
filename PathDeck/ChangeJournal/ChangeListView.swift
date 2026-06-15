@@ -6,6 +6,7 @@ struct ChangeListView: View {
     var hiddenCount: Int = 0
     var onRulesChanged: (() -> Void)?
     var onNavigate: ((ChangeEvent) -> Void)?
+    var onDiff: ((String) -> Void)?
 
     @State private var filter: ChangeEventType?
     @State private var showIgnoreRules = false
@@ -47,9 +48,23 @@ struct ChangeListView: View {
                     ForEach(groups, id: \.group) { section in
                         Section {
                             ForEach(section.events) { event in
-                                ChangeRow(event: event, hasVersion: versionedPaths.contains(event.path))
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { onNavigate?(event) }
+                                let hasVer = versionedPaths.contains(event.path)
+                                HStack(spacing: 0) {
+                                    ChangeRow(event: event, hasVersion: hasVer)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { onNavigate?(event) }
+                                    if hasVer {
+                                        Button { onDiff?(event.path) } label: {
+                                            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(.secondary)
+                                                .frame(width: 24, height: 24)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("比较上一版")
+                                    }
+                                }
                             }
                         } header: {
                             Text("\(section.group.label) (\(section.events.count))")

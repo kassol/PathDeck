@@ -46,7 +46,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）+ S14 终端活跃期间变化归因（弱关联到活跃终端 session）+ 轻量文件版本快照（文本类 ≤1MB 自动快照，独立 `versions.db`，hash 去重 + per-file 10 版本上限）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合，M3 闭合。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal/Changes tab 共存。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）+ S14 终端活跃期间变化归因（弱关联到活跃终端 session）+ 轻量文件版本快照（文本类 ≤1MB 自动快照，独立 `versions.db`，hash 去重 + per-file 10 版本上限）+ S15 Inline Diff View + Restore（Myers diff + 底部面板 diff tab + 恢复前自动快照 + FSWatcher 跨批次聚合重写）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）。M2 闭合，M3 闭合。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal/Changes tab 共存。
 
 ```
 PathDeck/                  App 源码
@@ -158,6 +158,7 @@ xcodebuild -deleteComponent MetalToolchain
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-15 **S15 Diff View + Restore + FSWatcher 聚合重写**（M4 核心用户面）：新增 `DiffEngine`（Myers diff）+ `DiffView`（inline diff + restore + `.task(id:)` 路径切换 + restore 前快照失败中止）+ `VersionStore.previousVersionWithContent`（跳过当前 hash）；`ChangeListView` 行导航与版本图标拆为独立区域；`FSWatcher` 重写为跨批次时间窗口聚合（0.5s debounce + `mergeType` 6 种组合 + `classify` renamed→modified）；`IgnoreRules` 新增 `*.sb-*`/`._*`/`*.tmp`；`ContentView` 底部面板 diff tab + restore 后自动回 changes；移除 `recentEventKeys` 补丁。106 个单测通过（+16）。
 - 2026-06-15 **S14 终端归因 + 文件版本快照**（M3 闭合 + M4 基础）：`ChangeEvent` 新增 `terminalSessionID` 归因字段 + `ChangeStore` v2 migration + 新增 `VersionStore`（独立 `versions.db`，文本类 ≤1MB 自动快照，SHA256 hash 去重，per-file 10 版本上限）+ `ChangeListView` 终端归因图标 + 版本快照图标 + `WorkspaceModel` 集成归因传递与快照触发。90 个单测通过（+8）。
 - 2026-06-15 **S13 窗口布局骨架**：NavigationSplitView 两列布局（sidebar Finder 风格 Favorites + detail 工作区）+ 底部面板 Terminal/Changes tab 共存（终端不再遮挡变化列表）+ BottomPanelBar 统一 tab bar + `isTerminalVisible` → `isBottomPanelVisible` 语义重命名 + Terminal exit 自动关闭 tab（`wait_after_command=false` + `close_surface_cb` → 通知 → 反查 `process_exited` → 回调关闭）。82 个单测通过。
 - 2026-06-14 **M2 闭合**（S8–S12）：Terminal Panel 嵌入主窗口 + Context Bridge（Send Path + 拖拽到终端）+ 变化面板增强（时间分组/类型过滤/点击定位/文件标记）+ 忽略规则（默认噪音过滤 + 用户自定义 glob）+ 多 Terminal Tab（独立 PTY/cwd/scrollback）。82 个单测通过。

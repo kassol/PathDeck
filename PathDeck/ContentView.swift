@@ -9,6 +9,7 @@ extension FocusedValues {
 enum BottomPanelTab: Hashable {
     case terminal
     case changes
+    case diff(path: String)
 }
 
 struct ContentView: View {
@@ -183,17 +184,37 @@ struct ContentView: View {
                 events: model.changes,
                 versionedPaths: model.versionedPaths,
                 hiddenCount: model.hiddenCount,
-                onRulesChanged: { model.reload() }
-            ) { event in
-                let url = URL(fileURLWithPath: event.path)
-                if FileManager.default.fileExists(atPath: event.path) {
-                    model.selectedURLs = [url]
-                    model.scrollToURL = url
+                onRulesChanged: { model.reload() },
+                onNavigate: { event in
+                    let url = URL(fileURLWithPath: event.path)
+                    if FileManager.default.fileExists(atPath: event.path) {
+                        model.selectedURLs = [url]
+                        model.scrollToURL = url
+                    }
+                },
+                onDiff: { path in
+                    activeBottomTab = .diff(path: path)
                 }
-            }
+            )
             .frame(height: model.isBottomPanelVisible && activeBottomTab == .changes
                    ? terminalHeight : 0)
             .clipped()
+
+            // Diff content
+            if case .diff(let diffPath) = activeBottomTab, let vs = model.versionStore {
+                DiffView(
+                    path: diffPath,
+                    versionStore: vs,
+                    onClose: { activeBottomTab = .changes },
+                    onRestored: {
+                        model.reload()
+                        activeBottomTab = .changes
+                    }
+                )
+                .id(diffPath)
+                .frame(height: model.isBottomPanelVisible ? terminalHeight : 0)
+                .clipped()
+            }
         }
     }
 
@@ -275,6 +296,11 @@ private struct BottomPanelBar: View {
     var onNewTerminalTab: () -> Void
     var onCloseTerminalTab: (UUID) -> Void
 
+    private var isDiff: Bool {
+        if case .diff = activeTab { return true }
+        return false
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             if activeTab == .terminal {
@@ -295,6 +321,17 @@ private struct BottomPanelBar: View {
             }
 
             Spacer()
+
+            if isDiff {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 10))
+                    Text("比较")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 8)
+            }
 
             Button { activeTab = .changes } label: {
                 HStack(spacing: 4) {

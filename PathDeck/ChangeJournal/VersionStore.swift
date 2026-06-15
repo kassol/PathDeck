@@ -130,6 +130,54 @@ final class VersionStore {
         }
     }
 
+    func versionContent(id: Int64) throws -> Data? {
+        try dbQueue.read { db in
+            try Data.fetchOne(
+                db,
+                sql: "SELECT content FROM file_versions WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    func latestVersionWithContent(for path: String) throws -> (FileVersion, Data)? {
+        try dbQueue.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT id, path, directory, content, contentHash, size, createdAt
+                    FROM file_versions WHERE path = ?
+                    ORDER BY createdAt DESC, id DESC LIMIT 1
+                    """,
+                arguments: [path]
+            )
+            guard let row,
+                  let version = Self.fileVersion(from: row),
+                  let content: Data = row["content"]
+            else { return nil }
+            return (version, content)
+        }
+    }
+
+    func previousVersionWithContent(for path: String, excludingHash hash: String) throws -> (FileVersion, Data)? {
+        try dbQueue.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT id, path, directory, content, contentHash, size, createdAt
+                    FROM file_versions WHERE path = ? AND contentHash != ?
+                    ORDER BY createdAt DESC, id DESC LIMIT 1
+                    """,
+                arguments: [path, hash]
+            )
+            guard let row,
+                  let version = Self.fileVersion(from: row),
+                  let content: Data = row["content"]
+            else { return nil }
+            return (version, content)
+        }
+    }
+
     static func isEligible(url: URL) -> Bool {
         guard let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey]),
               let contentType = values.contentType,

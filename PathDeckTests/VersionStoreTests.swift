@@ -77,6 +77,62 @@ struct VersionStoreTests {
     }
 
     @Test
+    func versionContentReturnsBlob() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let content = "fetch me".data(using: .utf8)!
+        try store.saveVersion(path: "/tmp/c.txt", directory: "/tmp", content: content, hash: content.sha256Hex)
+
+        let version = try store.latestVersion(for: "/tmp/c.txt")!
+        let fetched = try store.versionContent(id: version.id)
+        #expect(fetched == content)
+    }
+
+    @Test
+    func versionContentNilForMissingId() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let fetched = try store.versionContent(id: 99999)
+        #expect(fetched == nil)
+    }
+
+    @Test
+    func previousVersionExcludingHash() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let c1 = "old".data(using: .utf8)!
+        let c2 = "new".data(using: .utf8)!
+        try store.saveVersion(path: "/tmp/p.txt", directory: "/tmp", content: c1, hash: c1.sha256Hex)
+        try store.saveVersion(path: "/tmp/p.txt", directory: "/tmp", content: c2, hash: c2.sha256Hex)
+
+        let result = try store.previousVersionWithContent(for: "/tmp/p.txt", excludingHash: c2.sha256Hex)
+        #expect(result != nil)
+        #expect(result?.1 == c1)
+
+        let noResult = try store.previousVersionWithContent(for: "/tmp/p.txt", excludingHash: c1.sha256Hex)
+        #expect(noResult?.1 == c2)
+    }
+
+    @Test
+    func latestVersionWithContentReturnsData() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let c1 = "v1".data(using: .utf8)!
+        let c2 = "v2".data(using: .utf8)!
+        try store.saveVersion(path: "/tmp/wc.txt", directory: "/tmp", content: c1, hash: c1.sha256Hex)
+        try store.saveVersion(path: "/tmp/wc.txt", directory: "/tmp", content: c2, hash: c2.sha256Hex)
+
+        let result = try store.latestVersionWithContent(for: "/tmp/wc.txt")
+        #expect(result != nil)
+        #expect(result?.0.contentHash == c2.sha256Hex)
+        #expect(result?.1 == c2)
+    }
+
+    @Test
     func eligibilityCheck() throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PathDeckTests-\(UUID().uuidString)")
