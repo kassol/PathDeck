@@ -6,7 +6,8 @@ import Foundation
 struct WorkspaceModelTests {
 
     @Test func goUpReachesRootAndStops() {
-        let model = WorkspaceModel(root: URL(fileURLWithPath: "/Users"))
+        let suite = UserDefaults(suiteName: "PathDeckTests-\(UUID().uuidString)")!
+        let model = WorkspaceModel(root: URL(fileURLWithPath: "/Users"), defaults: suite)
 
         model.goUp()
         #expect(model.currentURL.path(percentEncoded: false) == "/")

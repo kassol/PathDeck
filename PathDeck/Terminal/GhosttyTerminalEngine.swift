@@ -8,6 +8,7 @@ final class GhosttyTerminalEngine: TerminalEngine {
     private let engineID = ObjectIdentifier(UUID.self as Any.Type)
     private var surfaceViews: [UUID: GhosttySurfaceView] = [:]
     private var sessionCwds: [UUID: URL] = [:]
+    private var pendingTexts: [UUID: [String]] = [:]
     private var observer: NSObjectProtocol?
     private let registrationID: ObjectIdentifier
 
@@ -40,18 +41,42 @@ final class GhosttyTerminalEngine: TerminalEngine {
     func closeSession(_ id: UUID) {
         surfaceViews.removeValue(forKey: id)
         sessionCwds.removeValue(forKey: id)
+        pendingTexts.removeValue(forKey: id)
     }
 
     func terminalView(for id: UUID) -> NSView {
         if let existing = surfaceViews[id] { return existing }
         let view = GhosttySurfaceView(frame: .zero)
         view.initialCwd = sessionCwds[id]
+        view.onSurfaceReady = { [weak self] in
+            self?.flushPendingTexts(for: id)
+        }
         surfaceViews[id] = view
         return view
     }
 
     func writeText(_ text: String, to id: UUID) {
-        surfaceViews[id]?.insertText(text)
+        if let view = surfaceViews[id], view.surface != nil {
+            view.insertText(text)
+        } else {
+            pendingTexts[id, default: []].append(text)
+            schedulePendingTimeout(for: id)
+        }
+    }
+
+    private func flushPendingTexts(for id: UUID) {
+        guard let texts = pendingTexts.removeValue(forKey: id),
+              let view = surfaceViews[id] else { return }
+        for text in texts {
+            view.insertText(text)
+        }
+    }
+
+    private func schedulePendingTimeout(for id: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, let texts = self.pendingTexts.removeValue(forKey: id) else { return }
+            NSLog("[PathDeck] writeText timeout: dropped %d pending text(s) for session %@", texts.count, id.uuidString)
+        }
     }
 
     private func handleSurfaceClose() {

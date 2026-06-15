@@ -10,13 +10,13 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 ## 目录结构
 
 - `TerminalEngine.swift` — 协议定义：多 session API（`createSession(cwd:) -> UUID` / `closeSession` / `terminalView(for:)` / `writeText(_:to:)` / `onCwdChange`），业务层唯一依赖
-- `GhosttyTerminalEngine.swift` — 协议实现：管理多个 `GhosttySurfaceView` 实例（`[UUID: GhosttySurfaceView]` 字典），延迟创建 surface，关闭时释放；通过 `GhosttyApp.registerPwdHandler` 订阅 cwd 变化
-- `TerminalSession.swift` — 会话值类型（id, title, cwd, currentCwd），SwiftUI 可 ForEach
+- `GhosttyTerminalEngine.swift` — 协议实现：管理多个 `GhosttySurfaceView` 实例（`[UUID: GhosttySurfaceView]` 字典），延迟创建 surface，关闭时释放；`pendingTexts` buffer 解决 surface 未就绪时 `writeText` 丢失（`onSurfaceReady` flush，5 秒超时保护）；通过 `GhosttyApp.registerPwdHandler` 订阅 cwd 变化
+- `TerminalSession.swift` — 会话值类型（id, title, cwd, currentCwd）+ `TerminalTabState`（Codable，用于跨重启 tab 恢复），SwiftUI 可 ForEach
 - `ShellIntegration.swift` — zsh/bash shell integration：ZDOTDIR 注入 OSC 7 precmd/chpwd hook（zsh），PROMPT_COMMAND 注入（bash）
 - `TerminalTabBar.swift` — 多 Tab 栏 SwiftUI 视图：tab 切换 / 新建（+按钮）/ 关闭（×按钮）/ 双击重命名
 - `TerminalPanelView.swift` — `NSViewRepresentable` 多 session 容器：container NSView + `isHidden` 切换活跃 surface + 焦点跟随
 - `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + runtime callbacks + `wakeup`→合并主队列 `app_tick` + `action_cb` 处理 `GHOSTTY_ACTION_PWD`/`SET_TITLE`（多 handler 注册）
-- `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置 + 读取 Settings（shell/font size）+ shell integration env vars 注入
+- `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置 + `onSurfaceReady` 回调（`createSurface` 成功后触发）+ 读取 Settings（shell/font size）+ shell integration env vars 注入
 - `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载（S2 遗留，保留作调试入口）
 
 入口：主窗口底部 Terminal Panel（⌃\` 或 Toolbar 按钮切换），支持多 tab；独立冒烟窗口（⌃⌥⌘T）。
@@ -47,6 +47,7 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 
 ## 变更日志
 
+- 2026-06-15 S17 writeText 竞态修复 + tab 恢复：`GhosttyTerminalEngine` 新增 `pendingTexts` buffer，surface 未就绪时缓存文本，`onSurfaceReady` flush（5 秒超时保护）。`GhosttySurfaceView` 新增 `onSurfaceReady` 闭包。新增 `TerminalTabState`（Codable）用于 terminal tab 跨重启序列化恢复。
 - 2026-06-15 S16 cwd 同步 + shell integration + Settings 适配：`GhosttyApp.action_cb` 从 no-op 改为处理 `GHOSTTY_ACTION_PWD`/`GHOSTTY_ACTION_SET_TITLE`，多 handler 注册（`registerPwdHandler`/`unregisterPwdHandler`）防多窗口覆盖。新增 `ShellIntegration.swift`（ZDOTDIR 注入 zsh 的 precmd/chpwd OSC 7 hook + bash PROMPT_COMMAND，percent-encode 路径）。`TerminalEngine` 协议新增 `onCwdChange`。`TerminalSession` 新增 `currentCwd`。`TerminalTabBar` 显示 cwd 尾段 + 点击跳转。`GhosttySurfaceView.createSurface` 读取 `TerminalDefaults`（shell/font size）+ `ShellIntegration.envVars`。
 - 2026-06-15 S13 Terminal exit 自动关闭：`GhosttySurfaceView` 设 `wait_after_command=false`（跳过 "Press any key"），`surface` 改为 `private(set)` 供 engine 查询。`GhosttyApp.close_surface_cb` 发 `ghosttySurfaceDidClose` 通知。`GhosttyTerminalEngine` 新增 `onSessionClose` 回调 + 通知监听 → `ghostty_surface_process_exited` 反查 → 回调关闭 tab。`TerminalPanelView` 新增 `isActive` 参数，tab 切回时恢复键盘焦点。
 - 2026-06-14 S12 多 Terminal Tab 落地：`TerminalEngine` 协议从单 session 改为多 session API（`createSession`/`closeSession`/`terminalView(for:)`/`writeText(_:to:)`）。新增 `TerminalSession.swift` 值类型 + `TerminalTabBar.swift`（tab 切换/新建/关闭/双击重命名）。`GhosttyTerminalEngine` 管理 `[UUID: GhosttySurfaceView]` 字典，surface 延迟到首次 `terminalView(for:)` 时创建。`TerminalPanelView` 重写为 container NSView（子 view `isHidden` 切换，保活所有 session PTY）。关闭最后一个 tab → 终端面板隐藏。Send Path / 拖拽路由到 active tab。Debug/Release build + 82 个单测通过（新增 TerminalSessionTests ×4）。

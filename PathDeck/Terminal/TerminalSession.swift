@@ -13,3 +13,8 @@ struct TerminalSession: Identifiable {
         self.currentCwd = cwd
     }
 }
+
+struct TerminalTabState: Codable {
+    let title: String
+    let cwdPath: String
+}

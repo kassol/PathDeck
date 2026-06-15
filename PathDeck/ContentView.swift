@@ -16,14 +16,21 @@ enum BottomPanelTab: Hashable {
 struct ContentView: View {
     @State private var model = WorkspaceModel()
     @State private var terminalEngine = GhosttyTerminalEngine()
-    @State private var terminalHeight: CGFloat = 250
     @State private var terminalSessions: [TerminalSession] = []
     @State private var activeTerminalID: UUID?
+    @State private var terminalHeight: CGFloat = 250
     @State private var activeBottomTab: BottomPanelTab = .terminal
     @State private var isPreviewPaneVisible: Bool = true
+    @State private var hasRestoredState: Bool = false
 
     private let terminalMinHeight: CGFloat = 100
     private let terminalMaxFraction: CGFloat = 0.6
+
+    private static let terminalTabsKey = "terminalTabsState"
+    private static let bottomPanelVisibleKey = "bottomPanelVisible"
+    private static let bottomPanelHeightKey = "bottomPanelHeight"
+    private static let previewPaneVisibleKey = "previewPaneVisible"
+    private static let activeTabKey = "activeBottomTab"
 
     var body: some View {
         NavigationSplitView {
@@ -73,6 +80,7 @@ struct ContentView: View {
                 if visible && terminalSessions.isEmpty {
                     createTerminalTab()
                 }
+                UserDefaults.standard.set(visible, forKey: Self.bottomPanelVisibleKey)
             }
             .onChange(of: activeTerminalID) { _, newID in
                 model.activeTerminalSessionID = newID
@@ -100,14 +108,25 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
-        .onAppear {
-            terminalEngine.onSessionClose = { [self] id in
-                closeTerminalTab(id)
-            }
-            terminalEngine.onCwdChange = { [self] id, url in
-                if let idx = terminalSessions.firstIndex(where: { $0.id == id }) {
-                    terminalSessions[idx].currentCwd = url
-                }
+        .onAppear { setupEngineCallbacks(); restoreState() }
+        .onDisappear { saveTerminalTabState() }
+        .modifier(StatePersistenceModifier(
+            activeBottomTab: activeBottomTab,
+            terminalSessions: terminalSessions,
+            terminalHeight: terminalHeight,
+            isPreviewPaneVisible: isPreviewPaneVisible,
+            onSaveTerminalTabs: { saveTerminalTabState() }
+        ))
+    }
+
+    private func setupEngineCallbacks() {
+        terminalEngine.onSessionClose = { [self] id in
+            closeTerminalTab(id)
+        }
+        terminalEngine.onCwdChange = { [self] id, url in
+            if let idx = terminalSessions.firstIndex(where: { $0.id == id }) {
+                terminalSessions[idx].currentCwd = url
+                saveTerminalTabState()
             }
         }
     }
@@ -322,6 +341,58 @@ struct ContentView: View {
             terminalEngine.writeText(escaped, to: activeID)
         }
     }
+
+    // MARK: - State Persistence
+
+    private func restoreState() {
+        guard !hasRestoredState else { return }
+        hasRestoredState = true
+
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.bottomPanelVisibleKey) != nil {
+            model.isBottomPanelVisible = defaults.bool(forKey: Self.bottomPanelVisibleKey)
+        }
+        if defaults.object(forKey: Self.bottomPanelHeightKey) != nil {
+            terminalHeight = CGFloat(defaults.double(forKey: Self.bottomPanelHeightKey))
+        }
+        if defaults.object(forKey: Self.previewPaneVisibleKey) != nil {
+            isPreviewPaneVisible = defaults.bool(forKey: Self.previewPaneVisibleKey)
+        }
+        if let raw = defaults.string(forKey: Self.activeTabKey) {
+            switch raw {
+            case "changes": activeBottomTab = .changes
+            default: activeBottomTab = .terminal
+            }
+        }
+
+        restoreTerminalTabs()
+    }
+
+    private func restoreTerminalTabs() {
+        guard let data = UserDefaults.standard.data(forKey: Self.terminalTabsKey),
+              let states = try? JSONDecoder().decode([TerminalTabState].self, from: data),
+              !states.isEmpty else { return }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        for state in states {
+            let cwdURL = URL(fileURLWithPath: state.cwdPath)
+            var isDir: ObjCBool = false
+            let cwd = FileManager.default.fileExists(atPath: state.cwdPath, isDirectory: &isDir) && isDir.boolValue
+                ? cwdURL : home
+            let id = terminalEngine.createSession(cwd: cwd)
+            terminalSessions.append(TerminalSession(id: id, title: state.title, cwd: cwd))
+            if activeTerminalID == nil { activeTerminalID = id }
+        }
+    }
+
+    private func saveTerminalTabState() {
+        let states = terminalSessions.map {
+            TerminalTabState(title: $0.title, cwdPath: $0.currentCwd.path(percentEncoded: false))
+        }
+        if let data = try? JSONEncoder().encode(states) {
+            UserDefaults.standard.set(data, forKey: Self.terminalTabsKey)
+        }
+    }
 }
 
 // MARK: - Bottom Panel Bar
@@ -462,5 +533,35 @@ private struct PathBarView: View {
         .frame(height: 24)
         .background(.bar)
         .accessibilityIdentifier("pathBar")
+    }
+}
+
+// MARK: - State Persistence Modifier
+
+private struct StatePersistenceModifier: ViewModifier {
+    let activeBottomTab: BottomPanelTab
+    let terminalSessions: [TerminalSession]
+    let terminalHeight: CGFloat
+    let isPreviewPaneVisible: Bool
+    let onSaveTerminalTabs: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: activeBottomTab) { _, newValue in
+                switch newValue {
+                case .terminal: UserDefaults.standard.set("terminal", forKey: "activeBottomTab")
+                case .changes: UserDefaults.standard.set("changes", forKey: "activeBottomTab")
+                case .diff: break
+                }
+            }
+            .onChange(of: terminalSessions.count) { _, _ in
+                onSaveTerminalTabs()
+            }
+            .onChange(of: terminalHeight) { _, newValue in
+                UserDefaults.standard.set(Double(newValue), forKey: "bottomPanelHeight")
+            }
+            .onChange(of: isPreviewPaneVisible) { _, newValue in
+                UserDefaults.standard.set(newValue, forKey: "previewPaneVisible")
+            }
     }
 }

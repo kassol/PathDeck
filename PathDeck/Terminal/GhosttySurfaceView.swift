@@ -16,6 +16,7 @@ import Metal
 /// ③ 转发键盘事件。本视图从不调用 `ghostty_surface_draw`。详见 `Terminal/AGENTS.md`。
 final class GhosttySurfaceView: NSView {
     var initialCwd: URL?
+    var onSurfaceReady: (() -> Void)?
     private(set) var surface: ghostty_surface_t?
 
     override init(frame frameRect: NSRect) {
@@ -142,6 +143,8 @@ final class GhosttySurfaceView: NSView {
         ghostty_surface_set_focus(surface, true)
         // 创建后 kick 首帧，防止 Ghostty miss 第一个 vsync 而停在空白帧。
         ghostty_surface_refresh(surface)
+        onSurfaceReady?()
+        onSurfaceReady = nil
     }
 
     /// 同步 display id / 内容缩放 / 像素尺寸到 surface。display id 让内部 CVDisplayLink 锁对刷新率。

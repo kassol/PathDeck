@@ -9,6 +9,9 @@ enum SortColumn: String {
 @Observable
 final class WorkspaceModel {
     private static let lastFolderKey = "lastOpenedFolder"
+    private static let sortColumnKey = "sortColumn"
+    private static let sortAscendingKey = "sortAscending"
+    private static let showHiddenKey = "showHidden"
 
     private(set) var currentURL: URL
     private(set) var items: [FileItem] = []
@@ -18,9 +21,15 @@ final class WorkspaceModel {
     private(set) var hiddenCount: Int = 0
     private(set) var versionedPaths: Set<String> = []
 
-    var sortColumn: SortColumn = .name
-    var sortAscending: Bool = true
-    var showHidden: Bool = false
+    var sortColumn: SortColumn = .name {
+        didSet { defaults.set(sortColumn.rawValue, forKey: Self.sortColumnKey) }
+    }
+    var sortAscending: Bool = true {
+        didSet { defaults.set(sortAscending, forKey: Self.sortAscendingKey) }
+    }
+    var showHidden: Bool = false {
+        didSet { defaults.set(showHidden, forKey: Self.showHiddenKey) }
+    }
     var selectedURLs: [URL] = []
     var pendingRenameURL: URL?
     var scrollToURL: URL?
@@ -54,15 +63,18 @@ final class WorkspaceModel {
         return segments
     }
 
+    private let defaults: UserDefaults
     private var watcher: FSWatcher?
     private var changeStore: ChangeStore?
     private(set) var versionStore: VersionStore?
     private var indicatorTimers: [String: Timer] = [:]
 
-    init(root: URL? = nil) {
+    init(root: URL? = nil, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+
         if let root {
             currentURL = root
-        } else if let saved = UserDefaults.standard.string(forKey: Self.lastFolderKey) {
+        } else if let saved = defaults.string(forKey: Self.lastFolderKey) {
             let url = URL(fileURLWithPath: saved)
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDir),
@@ -73,6 +85,17 @@ final class WorkspaceModel {
             }
         } else {
             currentURL = FileManager.default.homeDirectoryForCurrentUser
+        }
+
+        if let savedSort = defaults.string(forKey: Self.sortColumnKey),
+           let col = SortColumn(rawValue: savedSort) {
+            sortColumn = col
+        }
+        if defaults.object(forKey: Self.sortAscendingKey) != nil {
+            sortAscending = defaults.bool(forKey: Self.sortAscendingKey)
+        }
+        if defaults.object(forKey: Self.showHiddenKey) != nil {
+            showHidden = defaults.bool(forKey: Self.showHiddenKey)
         }
 
         do {
@@ -113,7 +136,7 @@ final class WorkspaceModel {
         clearExpiredIndicators()
         reload()
         watcher?.watch(directory: currentURL)
-        UserDefaults.standard.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
+        defaults.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
     }
 
     func openFolder() {
@@ -259,8 +282,8 @@ final class WorkspaceModel {
             return !IgnoreRules.shouldIgnore(fileName: fileName)
         }
 
-        let changesEnabled = UserDefaults.standard.object(forKey: "changesEnabled") == nil
-            ? true : UserDefaults.standard.bool(forKey: "changesEnabled")
+        let changesEnabled = defaults.object(forKey: "changesEnabled") == nil
+            ? true : defaults.bool(forKey: "changesEnabled")
 
         let dir = currentURL.path(percentEncoded: false)
         if changesEnabled {

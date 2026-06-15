@@ -12,7 +12,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `changeIndicators`（30s 淡出）+ `scrollToURL` + `isBottomPanelVisible` + `activeTerminalSessionID`（终端归因）+ `versionStore`/`versionedPaths`/`snapshotIfEligible`（文件版本快照） |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `changeIndicators`（30s 淡出）+ `scrollToURL` + `isBottomPanelVisible` + `activeTerminalSessionID`（终端归因）+ `versionStore`/`versionedPaths`/`snapshotIfEligible`（文件版本快照）。接受注入 `defaults: UserDefaults`（默认 `.standard`），sortColumn/sortAscending/showHidden 通过 didSet 持久化 |
 | `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look + 拖拽源（pasteboard writer）+ 变化标记色点 |
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
@@ -33,6 +33,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-15 S17 `WorkspaceModel` 注入 `defaults: UserDefaults` 参数（默认 `.standard`），隔离测试；sortColumn/sortAscending/showHidden 通过 didSet 持久化到 `defaults`，init 时恢复。所有 `UserDefaults.standard` 引用改为 `self.defaults`。
 - 2026-06-15 S16 新增 `PreviewPane.swift`（右侧预览面板：QLThumbnail + 元数据 + 版本状态 + Quick Actions）；`ContentView` 改为 HStack 分栏；⌘⇧P toggle。`WorkspaceModel.handleFSEvents` 新增 `changesEnabled` 开关守卫。
 - 2026-06-15 S14 WorkspaceModel 集成终端归因 + 版本快照：新增 `activeTerminalSessionID`（由 ContentView 从终端模块同步）传递给 `ChangeStore.recordBatch`；新增 `versionStore`（VersionStore）+ `versionedPaths`（Set）+ `snapshotIfEligible`（modified/added 事件触发，文本类 ≤1MB）。
 - 2026-06-15 S13 `isTerminalVisible` → `isBottomPanelVisible` 语义重命名（底部面板同时承载终端和变化列表）。

@@ -69,4 +69,45 @@ struct TerminalSessionTests {
         #expect(sessions.isEmpty)
         #expect(activeID == nil)
     }
+
+    @Test func writeTextBeforeViewDoesNotCrash() {
+        let engine = GhosttyTerminalEngine()
+        let cwd = URL(fileURLWithPath: "/tmp")
+        let id = engine.createSession(cwd: cwd)
+        engine.writeText("hello", to: id)
+    }
+
+    @Test func writeTextToUnknownSessionDoesNotCrash() {
+        let engine = GhosttyTerminalEngine()
+        engine.writeText("hello", to: UUID())
+    }
+
+    @Test func closeSessionClearsPendingText() {
+        let engine = GhosttyTerminalEngine()
+        let cwd = URL(fileURLWithPath: "/tmp")
+        let id = engine.createSession(cwd: cwd)
+        engine.writeText("queued text", to: id)
+        engine.closeSession(id)
+        engine.writeText("after close", to: id)
+    }
+
+    @Test func terminalTabStateCodable() throws {
+        let state = TerminalTabState(title: "Terminal 2", cwdPath: "/Users/test/project")
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(TerminalTabState.self, from: data)
+        #expect(decoded.title == "Terminal 2")
+        #expect(decoded.cwdPath == "/Users/test/project")
+    }
+
+    @Test func terminalTabStateArrayRoundTrip() throws {
+        let states = [
+            TerminalTabState(title: "Terminal", cwdPath: "/tmp"),
+            TerminalTabState(title: "Terminal 2", cwdPath: "/Users/test"),
+        ]
+        let data = try JSONEncoder().encode(states)
+        let decoded = try JSONDecoder().decode([TerminalTabState].self, from: data)
+        #expect(decoded.count == 2)
+        #expect(decoded[0].title == "Terminal")
+        #expect(decoded[1].cwdPath == "/Users/test")
+    }
 }

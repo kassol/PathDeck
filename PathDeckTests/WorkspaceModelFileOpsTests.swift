@@ -13,6 +13,11 @@ struct WorkspaceModelFileOpsTests {
         return tmp
     }
 
+    private func makeModel(root: URL) -> WorkspaceModel {
+        let suite = UserDefaults(suiteName: "PathDeckTests-\(UUID().uuidString)")!
+        return WorkspaceModel(root: root, defaults: suite)
+    }
+
     // MARK: - Navigation
 
     @Test func enterDirectoryChangesCurrentURL() throws {
@@ -21,7 +26,7 @@ struct WorkspaceModelFileOpsTests {
         let sub = tmp.appendingPathComponent("sub")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         let item = FileItem(url: sub, name: "sub", isDirectory: true,
                             size: nil, modifiedDate: nil, kind: "Folder")
         model.enter(item)
@@ -35,7 +40,7 @@ struct WorkspaceModelFileOpsTests {
         let file = tmp.appendingPathComponent("a.txt")
         FileManager.default.createFile(atPath: file.path, contents: nil)
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         let original = model.currentURL
         let item = FileItem(url: file, name: "a.txt", isDirectory: false,
                             size: 0, modifiedDate: nil, kind: "Text")
@@ -50,7 +55,7 @@ struct WorkspaceModelFileOpsTests {
         let sub = tmp.appendingPathComponent("target")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         model.navigate(to: sub)
 
         #expect(model.currentURL.standardizedFileURL == sub.standardizedFileURL)
@@ -60,7 +65,7 @@ struct WorkspaceModelFileOpsTests {
 
     @Test func pathSegmentsFromHome() {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let model = WorkspaceModel(root: home)
+        let model = makeModel(root: home)
         let segments = model.pathSegments
         #expect(segments.count == 1)
         #expect(segments[0].name == "~")
@@ -69,7 +74,7 @@ struct WorkspaceModelFileOpsTests {
     @Test func pathSegmentsFromSubdir() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let sub = home.appendingPathComponent("Documents")
-        let model = WorkspaceModel(root: sub)
+        let model = makeModel(root: sub)
         let segments = model.pathSegments
         #expect(segments.count >= 2)
         #expect(segments[0].name == "~")
@@ -77,7 +82,7 @@ struct WorkspaceModelFileOpsTests {
     }
 
     @Test func pathSegmentsFromRoot() {
-        let model = WorkspaceModel(root: URL(fileURLWithPath: "/"))
+        let model = makeModel(root: URL(fileURLWithPath: "/"))
         let segments = model.pathSegments
         #expect(segments.count == 1)
         #expect(segments[0].name == "/")
@@ -89,7 +94,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         #expect(model.showHidden == false)
         model.toggleHidden()
         #expect(model.showHidden == true)
@@ -105,7 +110,7 @@ struct WorkspaceModelFileOpsTests {
         FileManager.default.createFile(
             atPath: tmp.appendingPathComponent("visible.txt").path, contents: nil)
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         let countBefore = model.items.count
         model.toggleHidden()
         let countAfter = model.items.count
@@ -119,7 +124,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         #expect(model.sortColumn == .name)
         model.applySort(column: "date", ascending: false)
         #expect(model.sortColumn == .date)
@@ -130,7 +135,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         model.applySort(column: "nonexistent", ascending: true)
         #expect(model.sortColumn == .name)
     }
@@ -143,7 +148,7 @@ struct WorkspaceModelFileOpsTests {
         let file = tmp.appendingPathComponent("doomed.txt")
         FileManager.default.createFile(atPath: file.path, contents: Data("hi".utf8))
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         #expect(model.items.contains(where: { $0.name == "doomed.txt" }))
 
         model.selectedURLs = [file]
@@ -159,7 +164,7 @@ struct WorkspaceModelFileOpsTests {
         FileManager.default.createFile(
             atPath: tmp.appendingPathComponent("safe.txt").path, contents: nil)
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         let countBefore = model.items.count
         model.selectedURLs = []
         model.trashItems()
@@ -175,7 +180,7 @@ struct WorkspaceModelFileOpsTests {
         let file = tmp.appendingPathComponent("old.txt")
         FileManager.default.createFile(atPath: file.path, contents: Data("data".utf8))
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         let result = model.renameItem(from: file, to: "new.txt")
 
         #expect(result == true)
@@ -193,7 +198,7 @@ struct WorkspaceModelFileOpsTests {
         FileManager.default.createFile(
             atPath: tmp.appendingPathComponent("b.txt").path, contents: nil)
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         let result = model.renameItem(
             from: tmp.appendingPathComponent("a.txt"), to: "b.txt")
 
@@ -208,7 +213,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         model.newFolder()
 
         #expect(model.items.contains(where: { $0.name == "未命名文件夹" && $0.isDirectory }))
@@ -220,7 +225,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         model.newFolder()
 
         #expect(model.pendingRenameURL != nil)
@@ -232,7 +237,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         model.newFolder()
         model.newFolder()
 
@@ -246,7 +251,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         model.copyCurrentPath()
 
         let pasted = NSPasteboard.general.string(forType: .string)
@@ -259,7 +264,7 @@ struct WorkspaceModelFileOpsTests {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let model = WorkspaceModel(root: tmp)
+        let model = makeModel(root: tmp)
         #expect(model.items.isEmpty)
 
         FileManager.default.createFile(
