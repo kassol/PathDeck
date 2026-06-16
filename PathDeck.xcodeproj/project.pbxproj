@@ -7,11 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BD00C22100000001A0000001 /* pathdeck in Copy CLI Tool */ = {isa = PBXBuildFile; fileRef = BD00C22100000003A0000003 /* pathdeck */; };
 		BDA2E8A12FDCEFB0002B9364 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDA2E8A02FDCEFB0002B9364 /* GhosttyKit.xcframework */; };
 		BDA2E8B22FDE4200002B9364 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = BDA2E8B12FDE4200002B9364 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		BD00C22100000002A0000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BDA2E8672FDCEFAF002B9364 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BD00C22100000006A0000006;
+			remoteInfo = "pathdeck-cli";
+		};
 		BDA2E87D2FDCEFB0002B9364 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = BDA2E8672FDCEFAF002B9364 /* Project object */;
@@ -28,7 +36,22 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		BD00C22100000009A0000009 /* Copy CLI Tool */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				BD00C22100000001A0000001 /* pathdeck in Copy CLI Tool */,
+			);
+			name = "Copy CLI Tool";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		BD00C22100000003A0000003 /* pathdeck */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = pathdeck; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDA2E86F2FDCEFAF002B9364 /* PathDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PathDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDA2E87C2FDCEFB0002B9364 /* PathDeckTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PathDeckTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDA2E8862FDCEFB0002B9364 /* PathDeckUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PathDeckUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -36,6 +59,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BD00C22100000004A0000004 /* Exceptions for "CLI" folder in "PathDeck" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AGENTS.md,
+				main.swift,
+			);
+			target = BDA2E86E2FDCEFAF002B9364 /* PathDeck */;
+		};
 		BDA2E8A32FDCEFB0002B9364 /* Exceptions for "PathDeck" folder in "PathDeck" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -49,6 +80,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		BD00C22100000005A0000005 /* CLI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BD00C22100000004A0000004 /* Exceptions for "CLI" folder in "PathDeck" target */,
+			);
+			path = CLI;
+			sourceTree = "<group>";
+		};
 		BDA2E8712FDCEFAF002B9364 /* PathDeck */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -70,6 +109,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		BD00C22100000008A0000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BDA2E86C2FDCEFAF002B9364 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -100,6 +146,7 @@
 			isa = PBXGroup;
 			children = (
 				BDA2E8712FDCEFAF002B9364 /* PathDeck */,
+				BD00C22100000005A0000005 /* CLI */,
 				BDA2E87F2FDCEFB0002B9364 /* PathDeckTests */,
 				BDA2E8892FDCEFB0002B9364 /* PathDeckUITests */,
 				BDA2E8A22FDCEFB0002B9364 /* Frameworks */,
@@ -111,6 +158,7 @@
 			isa = PBXGroup;
 			children = (
 				BDA2E86F2FDCEFAF002B9364 /* PathDeck.app */,
+				BD00C22100000003A0000003 /* pathdeck */,
 				BDA2E87C2FDCEFB0002B9364 /* PathDeckTests.xctest */,
 				BDA2E8862FDCEFB0002B9364 /* PathDeckUITests.xctest */,
 			);
@@ -128,6 +176,25 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		BD00C22100000006A0000006 /* pathdeck-cli */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD00C2210000000DA000000D /* Build configuration list for PBXNativeTarget "pathdeck-cli" */;
+			buildPhases = (
+				BD00C22100000007A0000007 /* Sources */,
+				BD00C22100000008A0000008 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BD00C22100000005A0000005 /* CLI */,
+			);
+			name = "pathdeck-cli";
+			productName = pathdeck;
+			productReference = BD00C22100000003A0000003 /* pathdeck */;
+			productType = "com.apple.product-type.tool";
+		};
 		BDA2E86E2FDCEFAF002B9364 /* PathDeck */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BDA2E8902FDCEFB0002B9364 /* Build configuration list for PBXNativeTarget "PathDeck" */;
@@ -135,12 +202,15 @@
 				BDA2E86B2FDCEFAF002B9364 /* Sources */,
 				BDA2E86C2FDCEFAF002B9364 /* Frameworks */,
 				BDA2E86D2FDCEFAF002B9364 /* Resources */,
+				BD00C22100000009A0000009 /* Copy CLI Tool */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BD00C2210000000AA000000A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				BD00C22100000005A0000005 /* CLI */,
 				BDA2E8712FDCEFAF002B9364 /* PathDeck */,
 			);
 			name = PathDeck;
@@ -207,6 +277,9 @@
 				LastSwiftUpdateCheck = 2650;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
+					BD00C22100000006A0000006 = {
+						CreatedOnToolsVersion = 26.5;
+					};
 					BDA2E86E2FDCEFAF002B9364 = {
 						CreatedOnToolsVersion = 26.5;
 					};
@@ -238,6 +311,7 @@
 			projectRoot = "";
 			targets = (
 				BDA2E86E2FDCEFAF002B9364 /* PathDeck */,
+				BD00C22100000006A0000006 /* pathdeck-cli */,
 				BDA2E87B2FDCEFB0002B9364 /* PathDeckTests */,
 				BDA2E8852FDCEFB0002B9364 /* PathDeckUITests */,
 			);
@@ -269,6 +343,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		BD00C22100000007A0000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BDA2E86B2FDCEFAF002B9364 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -293,6 +374,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		BD00C2210000000AA000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BD00C22100000006A0000006 /* pathdeck-cli */;
+			targetProxy = BD00C22100000002A0000002 /* PBXContainerItemProxy */;
+		};
 		BDA2E87E2FDCEFB0002B9364 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = BDA2E86E2FDCEFAF002B9364 /* PathDeck */;
@@ -306,6 +392,30 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		BD00C2210000000BA000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = L8JSZE99NB;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_MODULE_NAME = pathdeck_cli;
+				PRODUCT_NAME = pathdeck;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BD00C2210000000CA000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = L8JSZE99NB;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_MODULE_NAME = pathdeck_cli;
+				PRODUCT_NAME = pathdeck;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		BDA2E88E2FDCEFB0002B9364 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -607,6 +717,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		BD00C2210000000DA000000D /* Build configuration list for PBXNativeTarget "pathdeck-cli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BD00C2210000000BA000000B /* Debug */,
+				BD00C2210000000CA000000C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		BDA2E86A2FDCEFAF002B9364 /* Build configuration list for PBXProject "PathDeck" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

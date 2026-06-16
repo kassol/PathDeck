@@ -16,6 +16,7 @@ struct PathDeckApp: App {
             ContentView()
         }
         .commands {
+            CLICommands()
             TerminalCommands()
             FileCommands()
             ViewCommands()
@@ -72,6 +73,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 atPath: url.path(percentEncoded: false), isDirectory: &isDir
             ), isDir.boolValue else { continue }
             AppRouter.shared.request(.open(url.standardizedFileURL))
+        }
+    }
+}
+
+/// CLI 工具安装菜单。
+private struct CLICommands: Commands {
+    var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Install Command Line Tool…") {
+                CLIInstaller.install()
+            }
         }
     }
 }
