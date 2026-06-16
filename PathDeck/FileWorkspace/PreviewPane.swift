@@ -5,8 +5,6 @@ import AppKit
 struct PreviewPane: View {
     let selectedURLs: [URL]
     let currentDirectory: URL
-    let versionedPaths: Set<String>
-    var onDiff: ((String) -> Void)?
     var onSendPath: (([URL]) -> Void)?
     var onRevealInFinder: ((URL) -> Void)?
 
@@ -39,12 +37,6 @@ struct PreviewPane: View {
                     fileNameSection(url: url)
                     Divider()
                     metadataSection(url: url)
-
-                    if versionedPaths.contains(url.path(percentEncoded: false)) {
-                        Divider()
-                        versionSection(url: url)
-                    }
-
                     Divider()
                     actionsSection(url: url)
                 }
@@ -84,27 +76,6 @@ struct PreviewPane: View {
             if let modified = attrs.modified {
                 MetadataRow(label: "Modified", value: modified.formatted(date: .abbreviated, time: .shortened))
             }
-        }
-    }
-
-    private func versionSection(url: URL) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(.orange)
-                    .frame(width: 6, height: 6)
-                Text("有上一版快照")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            Button {
-                onDiff?(url.path(percentEncoded: false))
-            } label: {
-                Label("比较上一版", systemImage: "chevron.left.forwardslash.chevron.right")
-                    .font(.system(size: 12))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.blue)
         }
     }
 

@@ -897,6 +897,8 @@ Terminal cd 到新目录后，UI 能展示当前 cwd
 
 ## 9.5 Recent Changes / Change Journal
 
+> **Killed (D1 2026-06-16)** — 实际使用中体感鸡肋，已完整移除。有 git 的目录将以 git status 为真相源（独立课题），无 git 的目录不做变化追踪。文件列表实时刷新由 FSWatcher 保留（已迁至 FileWorkspace 模块）。
+
 ### FR-CHANGE-001：工作区文件变化监听
 
 优先级：P0
@@ -1435,7 +1437,7 @@ PathDeck.app
 | Terminal 抽象 | TerminalEngine protocol | 隔离 libghostty API 变化风险 |
 | PTY 管理 | Swift + POSIX PTY/fork/Process | 真 shell 会话 |
 | 文件监听 | FSEvents | 监听目录树变化 |
-| 数据库 | SQLite | 本地状态、事件、版本索引 |
+| 数据库 | SQLite（已移除） | 本地状态、事件、版本索引 |
 | 搜索 | Spotlight + SQLite FTS | 元数据搜索与本地全文搜索 |
 | 预览 | Quick Look / PDFKit / AVKit / Text renderer | 原生预览能力 |
 | Diff | 自研文本 diff 或集成轻量 diff lib | 不暴露 Git 心智 |
@@ -1466,6 +1468,8 @@ libghostty 细节封装在 GhosttyTerminalEngine
 ---
 
 ## 11.4 Change Journal 架构
+
+> **Killed (D1 2026-06-16)** — 架构已废弃，保留供历史参考。
 
 ```txt
 FSEvents
@@ -1830,6 +1834,8 @@ Send Path to Terminal
 
 ## M3：Recent Changes MVP
 
+> **Killed (D1 2026-06-16)** — Change Journal 全栈已移除，FSEvents watcher 保留为文件列表实时刷新。
+
 目标：Terminal/命令导致的文件变化可见。
 
 范围：
@@ -1854,6 +1860,8 @@ Terminal 活跃期间弱关联
 ---
 
 ## M4：透明版本与恢复
+
+> **Killed (D1 2026-06-16)** — 版本快照 / Diff / Restore 随 Change Journal 一并移除。
 
 目标：对适合的文件提供 before/after 和恢复能力。
 
@@ -2256,11 +2264,11 @@ libghostty 真 Terminal
 +
 文件与 Terminal 的 Context Bridge
 +
-FSEvents + SQLite 的透明 Change Journal
+FSEvents 实时目录刷新（有 git 的目录未来以 git status 为真相源）
 +
-Quick Look / Preview / Diff / Restore
+Quick Look / Preview
 +
-Finder Extension 作为入口
+系统入口（URL Scheme / Finder Services / CLI）
 ```
 
 第一版必须避免被以下方向带偏：

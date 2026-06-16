@@ -7,19 +7,12 @@ extension FocusedValues {
     @Entry var togglePreviewPaneAction: (() -> Void)?
 }
 
-enum BottomPanelTab: Hashable {
-    case terminal
-    case changes
-    case diff(path: String)
-}
-
 struct ContentView: View {
     @State private var model = WorkspaceModel()
     @State private var terminalEngine = GhosttyTerminalEngine()
     @State private var terminalSessions: [TerminalSession] = []
     @State private var activeTerminalID: UUID?
     @State private var terminalHeight: CGFloat = 250
-    @State private var activeBottomTab: BottomPanelTab = .terminal
     @State private var isPreviewPaneVisible: Bool = true
     @State private var hasRestoredState: Bool = false
 
@@ -32,7 +25,6 @@ struct ContentView: View {
     private static let bottomPanelVisibleKey = "bottomPanelVisible"
     private static let bottomPanelHeightKey = "bottomPanelHeight"
     private static let previewPaneVisibleKey = "previewPaneVisible"
-    private static let activeTabKey = "activeBottomTab"
 
     var body: some View {
         NavigationSplitView {
@@ -84,12 +76,6 @@ struct ContentView: View {
                 }
                 UserDefaults.standard.set(visible, forKey: Self.bottomPanelVisibleKey)
             }
-            .onChange(of: activeTerminalID) { _, newID in
-                if let newID, let idx = terminalSessions.firstIndex(where: { $0.id == newID }) {
-                    terminalSessions[idx].lastActiveAt = Date()
-                }
-                model.updateTerminalSnapshots(buildSnapshots())
-            }
             .onChange(of: router.pending) { _, _ in
                 handleExternalRoute()
             }
@@ -119,7 +105,6 @@ struct ContentView: View {
         .onAppear { setupEngineCallbacks(); restoreState(); handleExternalRoute() }
         .onDisappear { saveTerminalTabState() }
         .modifier(StatePersistenceModifier(
-            activeBottomTab: activeBottomTab,
             terminalSessions: terminalSessions,
             terminalHeight: terminalHeight,
             isPreviewPaneVisible: isPreviewPaneVisible,
@@ -135,7 +120,6 @@ struct ContentView: View {
             if let idx = terminalSessions.firstIndex(where: { $0.id == id }) {
                 terminalSessions[idx].currentCwd = url
                 saveTerminalTabState()
-                model.updateTerminalSnapshots(buildSnapshots())
             }
         }
         terminalEngine.onPendingDropped = { id, count, reason in
@@ -176,7 +160,6 @@ struct ContentView: View {
                 FileTableView(
                     items: model.items,
                     pendingRenameURL: model.pendingRenameURL,
-                    changeIndicators: model.changeIndicators,
                     revealSelection: model.revealSelection,
                     onOpen: { model.enter($0) },
                     onSort: { column, ascending in
@@ -200,11 +183,6 @@ struct ContentView: View {
                     PreviewPane(
                         selectedURLs: model.selectedURLs,
                         currentDirectory: model.currentURL,
-                        versionedPaths: model.versionedPaths,
-                        onDiff: { path in
-                            if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
-                            activeBottomTab = .diff(path: path)
-                        },
                         onSendPath: { urls in sendPathToTerminal(urls) },
                         onRevealInFinder: { url in
                             NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -223,10 +201,8 @@ struct ContentView: View {
                 )
 
                 BottomPanelBar(
-                    activeTab: $activeBottomTab,
                     terminalSessions: $terminalSessions,
                     activeTerminalID: $activeTerminalID,
-                    changeCount: model.changes.count,
                     onNewTerminalTab: { createTerminalTab() },
                     onCloseTerminalTab: { closeTerminalTab($0) },
                     onNavigateToCwd: { url in model.navigate(to: url) }
@@ -239,51 +215,13 @@ struct ContentView: View {
                     activeSessionID: activeTerminalID,
                     sessionIDs: Set(terminalSessions.map(\.id)),
                     engine: terminalEngine,
-                    isActive: model.isBottomPanelVisible && activeBottomTab == .terminal
+                    isActive: model.isBottomPanelVisible
                 )
-                .frame(height: model.isBottomPanelVisible && activeBottomTab == .terminal
-                       ? terminalHeight : 0)
+                .frame(height: model.isBottomPanelVisible ? terminalHeight : 0)
                 .clipped()
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     handleTerminalDrop(providers)
                 }
-            }
-
-            // Changes content (keep in view tree to preserve @State filter)
-            ChangeListView(
-                events: model.changes,
-                versionedPaths: model.versionedPaths,
-                hiddenCount: model.hiddenCount,
-                onRulesChanged: { model.reload() },
-                onNavigate: { event in
-                    let url = URL(fileURLWithPath: event.path)
-                    if FileManager.default.fileExists(atPath: event.path) {
-                        model.selectedURLs = [url]
-                        model.revealSelection = [url]
-                    }
-                },
-                onDiff: { path in
-                    activeBottomTab = .diff(path: path)
-                }
-            )
-            .frame(height: model.isBottomPanelVisible && activeBottomTab == .changes
-                   ? terminalHeight : 0)
-            .clipped()
-
-            // Diff content
-            if case .diff(let diffPath) = activeBottomTab, let vs = model.versionStore {
-                DiffView(
-                    path: diffPath,
-                    versionStore: vs,
-                    onClose: { activeBottomTab = .changes },
-                    onRestored: {
-                        model.reload()
-                        activeBottomTab = .changes
-                    }
-                )
-                .id(diffPath)
-                .frame(height: model.isBottomPanelVisible ? terminalHeight : 0)
-                .clipped()
             }
         }
     }
@@ -307,7 +245,6 @@ struct ContentView: View {
                 if requireConfirmation, !confirmOpenTerminal(at: url) { return }
                 model.navigate(to: url)
                 RecentFolders.shared.add(url)
-                activeBottomTab = .terminal
                 createTerminalTab()
                 if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
             }
@@ -341,22 +278,8 @@ struct ContentView: View {
         if activeTerminalID == id {
             activeTerminalID = terminalSessions.last?.id
         }
-        if terminalSessions.isEmpty && activeBottomTab == .terminal {
+        if terminalSessions.isEmpty {
             model.isBottomPanelVisible = false
-        } else if terminalSessions.isEmpty {
-            activeBottomTab = .changes
-        }
-        model.updateTerminalSnapshots(buildSnapshots())
-    }
-
-    /// 把当前终端 tab 映射为归因快照（cwd = currentCwd，活跃时刻 = lastActiveAt）。
-    private func buildSnapshots() -> [TerminalActivitySnapshot] {
-        terminalSessions.map { session in
-            TerminalActivitySnapshot(
-                id: session.id,
-                cwd: session.currentCwd,
-                lastActive: session.lastActiveAt ?? .distantPast
-            )
         }
     }
 
@@ -394,7 +317,6 @@ struct ContentView: View {
             model.isBottomPanelVisible = true
             if terminalSessions.isEmpty { createTerminalTab() }
         }
-        activeBottomTab = .terminal
         guard let activeID = activeTerminalID else { return }
         let escaped = ShellEscape.escapeMultiple(
             urls.map { $0.path(percentEncoded: false) }
@@ -419,12 +341,6 @@ struct ContentView: View {
         }
         if defaults.object(forKey: Self.previewPaneVisibleKey) != nil {
             isPreviewPaneVisible = defaults.bool(forKey: Self.previewPaneVisibleKey)
-        }
-        if let raw = defaults.string(forKey: Self.activeTabKey) {
-            switch raw {
-            case "changes": activeBottomTab = .changes
-            default: activeBottomTab = .terminal
-            }
         }
 
         restoreTerminalTabs()
@@ -460,72 +376,21 @@ struct ContentView: View {
 // MARK: - Bottom Panel Bar
 
 private struct BottomPanelBar: View {
-    @Binding var activeTab: BottomPanelTab
     @Binding var terminalSessions: [TerminalSession]
     @Binding var activeTerminalID: UUID?
-    var changeCount: Int
     var onNewTerminalTab: () -> Void
     var onCloseTerminalTab: (UUID) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
 
-    private var isDiff: Bool {
-        if case .diff = activeTab { return true }
-        return false
-    }
-
     var body: some View {
         HStack(spacing: 0) {
-            if activeTab == .terminal {
-                TerminalTabBar(
-                    sessions: $terminalSessions,
-                    activeID: $activeTerminalID,
-                    onNewTab: onNewTerminalTab,
-                    onCloseTab: onCloseTerminalTab,
-                    onNavigateToCwd: onNavigateToCwd
-                )
-            } else {
-                Button { activeTab = .terminal } label: {
-                    Label("终端", systemImage: "terminal")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-            }
-
-            Spacer()
-
-            if isDiff {
-                HStack(spacing: 4) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 10))
-                    Text("比较")
-                        .font(.system(size: 11))
-                }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
-            }
-
-            Button { activeTab = .changes } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 10))
-                    Text("变化")
-                        .font(.system(size: 11))
-                    if changeCount > 0 {
-                        Text("\(changeCount)")
-                            .font(.system(size: 9, weight: .medium))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.orange.opacity(0.15))
-                            .foregroundStyle(.orange)
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(activeTab == .changes ? .primary : .secondary)
-            .padding(.horizontal, 8)
+            TerminalTabBar(
+                sessions: $terminalSessions,
+                activeID: $activeTerminalID,
+                onNewTab: onNewTerminalTab,
+                onCloseTab: onCloseTerminalTab,
+                onNavigateToCwd: onNavigateToCwd
+            )
         }
         .frame(height: 28)
         .background(.bar)
@@ -601,7 +466,6 @@ private struct PathBarView: View {
 // MARK: - State Persistence Modifier
 
 private struct StatePersistenceModifier: ViewModifier {
-    let activeBottomTab: BottomPanelTab
     let terminalSessions: [TerminalSession]
     let terminalHeight: CGFloat
     let isPreviewPaneVisible: Bool
@@ -609,13 +473,6 @@ private struct StatePersistenceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: activeBottomTab) { _, newValue in
-                switch newValue {
-                case .terminal: UserDefaults.standard.set("terminal", forKey: "activeBottomTab")
-                case .changes: UserDefaults.standard.set("changes", forKey: "activeBottomTab")
-                case .diff: break
-                }
-            }
             .onChange(of: terminalSessions.count) { _, _ in
                 onSaveTerminalTabs()
             }

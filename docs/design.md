@@ -15,7 +15,7 @@
 
 | 参考 | 文件 | 涵盖内容 |
 |---|---|---|
-| 交互原型 | `design/PathDeck Prototype (standalone).html` | 窗口骨架、三栏布局、Toolbar/Sidebar/File Browser/Preview/Terminal/Recent Changes 各区域构成、屏幕流转（Welcome → Workspace → Diff/Settings/Palette）、交互状态（Layout A/B/C、视图切换、面板展开收起、主题切换）|
+| 交互原型 | `design/PathDeck Prototype (standalone).html` | 窗口骨架、三栏布局、Toolbar/Sidebar/File Browser/Preview/Terminal 各区域构成、屏幕流转（Welcome → Workspace → Settings/Palette）、交互状态（Layout A/B/C、视图切换、面板展开收起、主题切换）|
 
 设计系统稿同样为 `dc-runtime` 打包的单文件 HTML，真实 UI 在 `<script type="__bundler/template">` 内（内联 style）。需要可视参考时直接用浏览器打开；本文是其规格化提炼。
 

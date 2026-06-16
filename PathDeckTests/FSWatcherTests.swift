@@ -2,47 +2,147 @@ import Testing
 import Foundation
 @testable import PathDeck
 
-struct FSWatcherTests {
-    /// 回归：导航瞬间 flush 的旧目录 pending 必须归属旧目录，而非导航后的新目录。
-    /// （修复前 WorkspaceModel.handleFSEvents 回读 currentURL，旧目录变化会写进新目录 journal。）
-    @Test func flushOnNavigationStampsEventsWithOriginDirectory() throws {
-        let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PathDeckFSW-\(UUID().uuidString)")
-        let dirA = base.appendingPathComponent("A")
-        let dirB = base.appendingPathComponent("B")
-        try FileManager.default.createDirectory(at: dirA, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: dirB, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: base) }
+private final class CallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
 
-        let box = CapturedBatches()
-        let watcher = FSWatcher { batch in box.append(batch) }
-        watcher.watch(directory: dirA)
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
 
-        // 注入一个 A 目录下的 deleted 事件：文件不存在 → classify=.deleted，
-        // 无需真实文件、不依赖真实 FSEventStream 的异步回调。
-        let goneFlag = UInt32(kFSEventStreamEventFlagItemRemoved) | UInt32(kFSEventStreamEventFlagItemIsFile)
-        let gonePath = dirA.appendingPathComponent("gone.txt").path(percentEncoded: false)
-        watcher.handleRawEvents(paths: [gonePath], flags: [goneFlag])
-
-        // 导航到 B —— watch 内部 stop() 立即 flush A 的 pending（早于 0.5s coalesce）。
-        watcher.watch(directory: dirB)
-
-        let dirs = box.snapshot().map { $0.directory }
-        #expect(dirs.contains(dirA.path(percentEncoded: false)))
-        #expect(!dirs.contains(dirB.path(percentEncoded: false)))
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }
 
-/// 线程安全收集 handler 回调的 batch（handler 在 watcher queue 调用，测试主线程读取）。
-private final class CapturedBatches: @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])] = []
+struct FSWatcherTests {
+    private static let fileFlag = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile)
+    private static let dirFlag = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
+    private static let modifiedFlag = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
 
-    func append(_ batch: [(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])]) {
-        lock.lock(); items.append(contentsOf: batch); lock.unlock()
+    // The coalesce window is 0.5s; wait past it to let any scheduled flush run.
+    private static let settleInterval: TimeInterval = 0.7
+
+    private func makeTempDir() throws -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PathDeckTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        return tmp
     }
 
-    func snapshot() -> [(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])] {
-        lock.lock(); defer { lock.unlock() }; return items
+    // Mirrors the normalization watch(directory:) applies before storing watchedDirectory.
+    private func watchedPath(_ dir: URL) -> String {
+        var path = dir.path(percentEncoded: false)
+        if path.hasSuffix("/") && path.count > 1 {
+            path = String(path.dropLast())
+        }
+        return path
+    }
+
+    @Test func parentMismatchIsIgnored() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let counter = CallCounter()
+        let watcher = FSWatcher { counter.increment() }
+        watcher.watch(directory: tmp)
+        defer { watcher.stop() }
+
+        watcher.handleRawEvents(
+            paths: ["/some/other/dir/file.txt"],
+            flags: [Self.fileFlag]
+        )
+        Thread.sleep(forTimeInterval: Self.settleInterval)
+
+        #expect(counter.count == 0)
+    }
+
+    @Test func missingFileOrDirFlagIsIgnored() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let counter = CallCounter()
+        let watcher = FSWatcher { counter.increment() }
+        watcher.watch(directory: tmp)
+        defer { watcher.stop() }
+
+        // Parent matches, but neither file nor dir flag is set.
+        watcher.handleRawEvents(
+            paths: [watchedPath(tmp) + "/file.txt"],
+            flags: [Self.modifiedFlag]
+        )
+        Thread.sleep(forTimeInterval: Self.settleInterval)
+
+        #expect(counter.count == 0)
+    }
+
+    @Test func deepChildIsIgnored() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let counter = CallCounter()
+        let watcher = FSWatcher { counter.increment() }
+        watcher.watch(directory: tmp)
+        defer { watcher.stop() }
+
+        watcher.handleRawEvents(
+            paths: [watchedPath(tmp) + "/sub/file.txt"],
+            flags: [Self.fileFlag]
+        )
+        Thread.sleep(forTimeInterval: Self.settleInterval)
+
+        #expect(counter.count == 0)
+    }
+
+    @Test func rapidEventsCoalesceToSingleCall() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let counter = CallCounter()
+        let watcher = FSWatcher { counter.increment() }
+        watcher.watch(directory: tmp)
+        defer { watcher.stop() }
+
+        let base = watchedPath(tmp)
+        watcher.handleRawEvents(paths: [base + "/a.txt"], flags: [Self.fileFlag])
+        watcher.handleRawEvents(paths: [base + "/b.txt"], flags: [Self.fileFlag])
+        watcher.handleRawEvents(paths: [base + "/sub"], flags: [Self.dirFlag])
+        Thread.sleep(forTimeInterval: Self.settleInterval)
+
+        #expect(counter.count == 1)
+    }
+
+    @Test func stopFlushesWhenDirty() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let counter = CallCounter()
+        let watcher = FSWatcher { counter.increment() }
+        watcher.watch(directory: tmp)
+
+        watcher.handleRawEvents(paths: [watchedPath(tmp) + "/a.txt"], flags: [Self.fileFlag])
+        // stop() runs before the 0.5s flush fires; it must flush synchronously.
+        watcher.stop()
+
+        #expect(counter.count == 1)
+    }
+
+    @Test func stopDoesNotFireWhenClean() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let counter = CallCounter()
+        let watcher = FSWatcher { counter.increment() }
+        watcher.watch(directory: tmp)
+
+        // Filtered event leaves the watcher clean, so stop() must not fire.
+        watcher.handleRawEvents(paths: ["/elsewhere/a.txt"], flags: [Self.fileFlag])
+        watcher.stop()
+
+        #expect(counter.count == 0)
     }
 }

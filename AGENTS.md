@@ -5,16 +5,15 @@
 
 ## 项目概述
 
-PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为主心智，需要命令行时就地长出真 Terminal，并透明记录 Terminal / CLI / AI agent 对文件系统造成的变化。
+PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为主心智，需要命令行时就地长出真 Terminal，文件系统变化通过 FSEvents 实时感知并刷新列表。
 
-四大支柱：
+三大支柱：
 
 1. Finder-like 文件工作台（浏览 / 预览 / 搜索 / 路径导航）
 2. 内嵌 libghostty 真 Terminal（经 `TerminalEngine` 协议隔离）
 3. Context Bridge（文件 ↔ Terminal 双向上下文桥）
-4. Change Journal（FSEvents + SQLite 透明变化记录 + 轻量版本 / diff / restore）
 
-完整产品定义见 `docs/prd.md`（v0.2 Draft，唯一权威产品来源）。
+完整产品定义见 `docs/prd.md`（v0.2 Draft，产品来源；M3/M4 已标注 Killed，以代码现实为准）。
 
 明确不做（定位边界，违反即偏离产品本质）：
 
@@ -30,9 +29,8 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 | 文件列表 | AppKit `NSTableView` / `NSOutlineView` / `NSCollectionView` | 大目录性能与复杂选择 |
 | Terminal | libghostty（Zig 构建，C API） | 见「libghostty 集成风险」|
 | Terminal 抽象 | `TerminalEngine` protocol | 隔离 libghostty API 变动 |
-| 文件监听 | FSEvents | 目录树变化 |
-| 存储 | SQLite | 事件 / 版本 / 会话 |
-| 搜索 | Spotlight + SQLite FTS | |
+| 文件监听 | FSEvents | 当前目录变化实时刷新 |
+| 搜索 | Spotlight | |
 | 预览 | Quick Look / PDFKit / AVKit | |
 | 分发 | Developer ID + Notarization | 见决策 D1 |
 
@@ -46,12 +44,12 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + 文件变化标记 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）；`ChangeJournal` 已落地（S3 FSEvents + SQLite）+ S10 时间分组/类型过滤/点击定位增强 + S11 忽略规则（默认噪音过滤 + 用户自定义 glob）+ S14 终端活跃期间变化归因（弱关联到活跃终端 session）+ 轻量文件版本快照（文本类自动快照，独立 `versions.db`，hash 去重，大小上限与版本保留数从 Settings 读取）+ S15 Inline Diff View + Restore（Myers diff + 底部面板 diff tab + 恢复前自动快照 + FSWatcher 跨批次聚合重写）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）。M2 闭合，M3 闭合。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal/Changes tab 共存。S16 新增 Settings 窗口（Terminal shell/font/scrollback + Changes 开关/大小上限/版本保留数/忽略规则管理）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用（细节见下方变更日志）。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）、变化归因重构为 cwd 前缀匹配纯函数（事件时刻捕获快照、不匹配 → nil）、版本 baseline 进目录预录 + restore 纯函数化。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）+ FSWatcher（FSEvents 实时监听当前目录文件变化 → reload 列表）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal。S16 新增 Settings 窗口（Terminal shell/font/scrollback）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。D1 Dogfood：移除 Change Journal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 迁入 FileWorkspace/ 简化为纯信号通知，移除 GRDB 依赖。
 
 ```
 PathDeck/                  App 源码
 PathDeck/PathDeckApp.swift @main（Window scene 单窗口，防 WindowGroup 重复开窗）+ AppDelegate（kAEGetURL 拦截 URL Scheme + application(_:open:) Open With + Services 注册）
-PathDeck/ContentView.swift NavigationSplitView 主布局 + 底部面板 tab 切换 + Preview Pane + 终端/变化协调 + 消费 AppRouter
+PathDeck/ContentView.swift NavigationSplitView 主布局 + 底部 Terminal 面板 + Preview Pane + 消费 AppRouter
 PathDeck/SidebarView.swift Sidebar（Favorites + Pinned）+ PinnedFolders bookmark 持久化
 PathDeck/AppRouter.swift   外部入口（URL Scheme/Services/Open With）归一中介，@Observable 一次性令牌
 PathDeck/URLSchemeHandler.swift  pathdeck:// 解析 + 安全校验（查询参数式，目录/存在性校验）
@@ -61,10 +59,9 @@ PathDeck/Info.plist        URL Scheme / NSServices / CFBundleDocumentTypes / 单
 CLI/                       pathdeck 命令行工具 target（pathdeck-cli，product name: pathdeck）
 CLI/main.swift             CLI 入口：解析参数 → CLICommand.parse → /usr/bin/open pathdeck://
 CLI/CLICommand.swift       参数解析 + URL 构造纯函数（synchronized group 同时编译到 PathDeck app target 供单测，main.swift 经 membershipExceptions 排除）
-PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图、Preview Pane），见其 AGENTS.md
+PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图、Preview Pane、FSWatcher），见其 AGENTS.md
 PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议 + cwd 同步），见其 AGENTS.md
-PathDeck/ChangeJournal/    文件变化感知与记录模块（FSEvents + SQLite + 版本快照），见其 AGENTS.md
-PathDeck/Settings/         Settings 窗口（Terminal + Changes 偏好设置）
+PathDeck/Settings/         Settings 窗口（Terminal 偏好设置）
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
@@ -75,7 +72,7 @@ docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需
 design/                    设计稿源文件（standalone HTML，可浏览器打开看可视参考），不进 build
 ```
 
-规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal`、`ChangeJournal` 已落地）。
+规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal` 已落地；`ChangeJournal` 已在 D1 Dogfood 中移除）。
 
 ### Sidebar 扩展路线
 
@@ -83,7 +80,7 @@ design/                    设计稿源文件（standalone HTML，可浏览器�
 
 **P1**：iCloud Drive 入口 / Volumes & Locations（外置盘、网络盘，需评估 FSEvents 对非本地卷可靠性）/ ~~Pinned 升级 security-scoped bookmark~~（✅ S16 已完成）/ Recents 入口
 
-**P2**：Tags（`NSURLTagNamesKey` 按颜色/名称分组）/ Smart Folders（保存搜索条件为虚拟文件夹）/ Pinned 拖拽重排序 / Badge 计数（目录下变化数量，`ChangeStore` 查询）
+**P2**：Tags（`NSURLTagNamesKey` 按颜色/名称分组）/ Smart Folders（保存搜索条件为虚拟文件夹）/ Pinned 拖拽重排序
 
 **约束**：Sidebar 条目点击 = 导航（`model.navigate(to:)`），不做展开子树；文件树浏览是主区 FileTableView 职责。
 
@@ -110,7 +107,7 @@ open PathDeck.xcodeproj
   理由：监听任意目录的 FSEvents + fork PTY + 真 terminal 在 App Store sandbox 下基本不可行。该决策反向约束权限模型：用 security-scoped bookmark 持久化用户显式授权的目录，默认不申请 Full Disk Access。
 
 - **D2 Swift 语言模式暂定 5.0，编译器 6.3.2。**
-  FSEvents watcher / PTY / SQLite 均涉并发。未来切 Swift 6 strict concurrency 时要统一并发模型；新增并发代码应预留 `Sendable` / actor 隔离，避免后期大改。
+  FSEvents watcher / PTY 均涉并发。未来切 Swift 6 strict concurrency 时要统一并发模型；新增并发代码应预留 `Sendable` / actor 隔离，避免后期大改。
 
 - **D3 部署目标 macOS 26.5。**
   激进、收窄用户群，早期验证可接受。引入任何 API 前确认 26.5 可用，不为兼容旧系统做降级分支。
@@ -161,24 +158,25 @@ xcodebuild -deleteComponent MetalToolchain
 - 外科手术式修改：每行改动可追溯到明确需求，不顺手重构 / 改格式 / 动死代码。
 - 里程碑式提交；commit message 用英文，第三方可读产出物中不出现个人称谓。
 - 改完跑构建 + 测试（涉及 synchronized group 资源变动时用 **clean build**：同名 resource 冲突等问题增量 build 不暴露）。
-- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`、`ChangeJournal/AGENTS.md`、`Info.plist`。
+- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`、`Info.plist`。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
 ## 变更日志
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-16 **D1 Kill Change Journal**（Dogfood 第一刀）：移除 ChangeJournal 全栈（10 源文件 + 8 测试 + Settings tab），FSWatcher 迁入 FileWorkspace/ 简化为纯信号，移除 GRDB 包依赖。底部面板仅保留 Terminal。
 - 2026-06-16 **S22 CLI helper**（M5 闭合）：`pathdeck` 命令行工具（参数解析 + URL 构造 + `/usr/bin/open`）+ `CLIInstaller` 安装菜单。203 测试。
 - 2026-06-16 **Pre-S22 稳定化**：Kill FinderSync Extension + 10k 性能基线 + reveal firmlink 修复。
 - 2026-06-16 **S19–S21 质量加固**：writeText 竞态收口（PendingTextBuffer + surface 失败回调）+ 变化归因重构（cwd 前缀纯函数）+ 版本 baseline 进目录预录。171 测试。
 - 2026-06-16 **S18 系统入口**（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + Open With 经 `AppRouter` 归一路由 + `reveal([URL])` 跨目录多选。149 测试。
 - 2026-06-15 **S17 窗口状态恢复**（M5 Phase 1）：全量窗口状态持久化 + writeText 竞态修复（pending buffer）+ 1k 性能基线。126 测试。
 - 2026-06-15 **S16 P1 合并交付**（M5 衔接）：Preview Pane + Terminal cwd 同步 + Pinned bookmark 持久化 + Settings 窗口。117 测试。
-- 2026-06-15 **S15 Diff View + Restore**（M4 核心）：Myers diff + inline diff view + restore + FSWatcher 聚合重写。106 测试。
-- 2026-06-15 **S14 终端归因 + 文件版本快照**（M3 闭合 + M4 基础）：ChangeEvent 归因 + VersionStore（文本 ≤1MB 自动快照，SHA256 去重）。90 测试。
-- 2026-06-15 **S13 窗口布局骨架**：NavigationSplitView 两列 + 底部面板 Terminal/Changes tab 共存 + Terminal exit 自动关闭。82 测试。
+- 2026-06-15 **S15 Diff View + Restore**（M4 核心，killed D1）：Myers diff + inline diff view + restore + FSWatcher 聚合重写。
+- 2026-06-15 **S14 终端归因 + 文件版本快照**（M3 闭合 + M4 基础，killed D1）：ChangeEvent 归因 + VersionStore。
+- 2026-06-15 **S13 窗口布局骨架**：NavigationSplitView 两列 + 底部 Terminal 面板 + Terminal exit 自动关闭。82 测试。
 - 2026-06-14 **M2 闭合**（S8–S12）：Terminal Panel + Context Bridge + 变化面板增强 + 忽略规则 + 多 Terminal Tab。82 测试。
 - 2026-06-14 **M1 闭合**（S4–S7）：导航/排序/隐藏文件 + 右键菜单 + Quick Look + 打开文件夹/搜索。56 测试。
-- 2026-06-14 **M0 闭合**（S3）：FSEvents + SQLite 变化记录。
+- 2026-06-14 **M0 闭合**（S3）：FSEvents 变化记录（SQLite 存储已在 D1 移除）。
 - 2026-06-13 **技术验证**（S1–S2）：文件浏览 + libghostty 嵌入冒烟。
 - 2026-06-13 初始化 AGENTS.md 体系；固化 D1/D2/D3 决策；libghostty 构建攻坚。

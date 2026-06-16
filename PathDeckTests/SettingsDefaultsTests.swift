@@ -29,19 +29,4 @@ struct SettingsDefaultsTests {
         let scrollback = TerminalDefaults.scrollback
         #expect(scrollback == 10000)
     }
-
-    @Test
-    func versionStoreDefaultMaxPerFile() {
-        #expect(VersionStore.maxVersionsPerFile == 10)
-    }
-
-    @Test
-    func versionStoreDefaultMaxFileSize() {
-        #expect(VersionStore.maxFileSize == 1024 * 1024)
-    }
-
-    @Test
-    func versionStoreIsEnabledByDefault() {
-        #expect(VersionStore.isEnabled)
-    }
 }

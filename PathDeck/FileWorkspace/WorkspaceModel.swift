@@ -16,10 +16,6 @@ final class WorkspaceModel {
     private(set) var currentURL: URL
     private(set) var items: [FileItem] = []
     private(set) var allItems: [FileItem] = []
-    private(set) var changes: [ChangeEvent] = []
-    private(set) var changeIndicators: [String: ChangeEventType] = [:]
-    private(set) var hiddenCount: Int = 0
-    private(set) var versionedPaths: Set<String> = []
 
     var sortColumn: SortColumn = .name {
         didSet { defaults.set(sortColumn.rawValue, forKey: Self.sortColumnKey) }
@@ -65,17 +61,6 @@ final class WorkspaceModel {
 
     private let defaults: UserDefaults
     private var watcher: FSWatcher?
-    private var changeStore: ChangeStore?
-    private(set) var versionStore: VersionStore?
-    private var indicatorTimers: [String: Timer] = [:]
-
-    /// 终端活跃快照，由 `ContentView` 推送、`FSWatcher` 后台队列读取做归因。
-    /// `NSLock` 保护跨线程读写（主线程写 / watcher 队列读）；`@ObservationIgnored`
-    /// 剥离 observation 追踪，使锁成为唯一并发屏障（属性 private、无 view 订阅）。
-    @ObservationIgnored private let snapshotsLock = NSLock()
-    @ObservationIgnored private var terminalSnapshots: [TerminalActivitySnapshot] = []
-    /// 预录 baseline 的 in-flight 去重标志（主线程读写），防频繁 reload 派发重叠的全量后台扫描。
-    @ObservationIgnored private var isPreRecordingBaselines = false
 
     init(root: URL? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -106,23 +91,8 @@ final class WorkspaceModel {
             showHidden = defaults.bool(forKey: Self.showHiddenKey)
         }
 
-        do {
-            changeStore = try ChangeStore()
-        } catch {
-            NSLog("[PathDeck] ChangeStore init failed: \(error)")
-        }
-        do {
-            versionStore = try VersionStore()
-        } catch {
-            NSLog("[PathDeck] VersionStore init failed: \(error)")
-        }
-
-        watcher = FSWatcher(
-            snapshotProvider: { [weak self] in self?.readTerminalSnapshots() ?? [] }
-        ) { [weak self] events in
-            DispatchQueue.main.async {
-                self?.handleFSEvents(events)
-            }
+        watcher = FSWatcher { [weak self] in
+            DispatchQueue.main.async { self?.reload() }
         }
 
         reload()
@@ -143,7 +113,6 @@ final class WorkspaceModel {
         currentURL = url.standardizedFileURL
         searchQuery = ""
         isSearching = false
-        clearExpiredIndicators()
         reload()
         watcher?.watch(directory: currentURL)
         defaults.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
@@ -184,12 +153,6 @@ final class WorkspaceModel {
         sortAscending = ascending
         allItems = Self.sortedItems(allItems, by: sortColumn, ascending: sortAscending)
         applySearch()
-    }
-
-    func clearExpiredIndicators() {
-        changeIndicators.removeAll()
-        for (_, timer) in indicatorTimers { timer.invalidate() }
-        indicatorTimers.removeAll()
     }
 
     func copyCurrentPath() {
@@ -249,8 +212,6 @@ final class WorkspaceModel {
         let rawItems = (try? DirectoryLister.list(currentURL, includeHidden: showHidden)) ?? []
         allItems = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
         applySearch()
-        refreshChanges()
-        preRecordBaselines()
     }
 
     private func applySearch() {
@@ -291,104 +252,4 @@ final class WorkspaceModel {
             }
         }
     }
-
-    private func refreshChanges() {
-        let dir = currentURL.path(percentEncoded: false)
-        let raw = (try? changeStore?.recentEvents(in: dir, limit: 200)) ?? []
-        let filtered = raw.filter { !IgnoreRules.shouldIgnore(fileName: $0.fileName) }
-        changes = Array(filtered.prefix(50))
-        hiddenCount = raw.count - filtered.count
-        versionedPaths = Set((try? versionStore?.pathsWithVersions(in: dir)) ?? [])
-    }
-
-    /// 由 `ContentView` 在终端 tab 活跃/cwd/增删变化时推送最新快照。
-    func updateTerminalSnapshots(_ snapshots: [TerminalActivitySnapshot]) {
-        snapshotsLock.lock()
-        terminalSnapshots = snapshots
-        snapshotsLock.unlock()
-    }
-
-    private func readTerminalSnapshots() -> [TerminalActivitySnapshot] {
-        snapshotsLock.lock()
-        defer { snapshotsLock.unlock() }
-        return terminalSnapshots
-    }
-
-    private func handleFSEvents(_ events: [(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])]) {
-        let accepted = events.filter { event in
-            let fileName = URL(fileURLWithPath: event.path).lastPathComponent
-            return !IgnoreRules.shouldIgnore(fileName: fileName)
-        }
-
-        let changesEnabled = defaults.object(forKey: "changesEnabled") == nil
-            ? true : defaults.bool(forKey: "changesEnabled")
-
-        // 用事件自带的 directory（来自 FSWatcher 的 watchedDirectory），不回读 currentURL——
-        // 导航瞬间 flush 的旧目录 pending 必须归属旧目录，而非导航后已切换的新目录。
-        if changesEnabled {
-            let batch = accepted.map { event -> (path: String, type: ChangeEventType, directory: String, terminalSessionID: UUID?) in
-                let sessionID = TerminalAttribution.attribute(eventPath: event.path, snapshots: event.snapshots)
-                return (path: event.path, type: event.type, directory: event.directory, terminalSessionID: sessionID)
-            }
-            try? changeStore?.recordBatch(batch)
-        }
-
-        for event in accepted where event.type == .added || event.type == .modified {
-            snapshotIfEligible(path: event.path, directory: event.directory)
-        }
-
-        for event in accepted {
-            guard event.type != .deleted else { continue }
-            changeIndicators[event.path] = event.type
-            indicatorTimers[event.path]?.invalidate()
-            indicatorTimers[event.path] = Timer.scheduledTimer(
-                withTimeInterval: 30, repeats: false
-            ) { [weak self] _ in
-                self?.changeIndicators.removeValue(forKey: event.path)
-                self?.indicatorTimers.removeValue(forKey: event.path)
-            }
-        }
-
-        reload()
-    }
-
-    private func snapshotIfEligible(path: String, directory: String) {
-        let url = URL(fileURLWithPath: path)
-        guard VersionStore.isEligible(url: url),
-              let content = try? Data(contentsOf: url) else { return }
-        let hash = content.sha256Hex
-        try? versionStore?.saveVersion(
-            path: path,
-            directory: directory,
-            content: content,
-            hash: hash
-        )
-    }
-
-    /// 进目录后台预录既存 eligible 文本文件基线（字节预算兜底大目录，不阻塞 UI）。
-    private func preRecordBaselines() {
-        guard let store = versionStore, !isPreRecordingBaselines else { return }
-        let dir = currentURL.path(percentEncoded: false)
-        let urls = allItems.filter { !$0.isDirectory }.map(\.url)
-        guard !urls.isEmpty else { return }
-        isPreRecordingBaselines = true
-        DispatchQueue.global(qos: .background).async { [weak self] in
-            let result = VersionStore.recordBaselines(
-                store, urls: urls, directory: dir, byteBudget: 16 * 1024 * 1024
-            )
-            if result.truncated {
-                NSLog("[PathDeck] baseline preRecord truncated in %@: recorded=%d skipped=%d (16MB budget)",
-                      dir, result.recorded, result.skipped)
-            }
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isPreRecordingBaselines = false
-                // 扫描期间已导航到别的目录 → 补扫，避免漏录新目录基线。
-                if self.currentURL.path(percentEncoded: false) != dir {
-                    self.preRecordBaselines()
-                }
-            }
-        }
-    }
 }
-

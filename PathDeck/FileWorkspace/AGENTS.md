@@ -4,7 +4,7 @@
 
 ## 职责
 
-Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder）、Quick Look 预览、打开任意文件夹、文件名搜索、Send Path to Terminal、拖拽文件到终端、文件变化标记、Preview Pane（右侧文件预览面板）。后续扩展：多视图模式、内容搜索。
+Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder）、Quick Look 预览、打开任意文件夹、文件名搜索、Send Path to Terminal、拖拽文件到终端、FSEvents 实时目录刷新（FSWatcher）、Preview Pane（右侧文件预览面板）。后续扩展：多视图模式、内容搜索。
 
 ## 目录结构
 
@@ -12,38 +12,37 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `changeIndicators`（30s 淡出）+ `revealSelection`（命令式多选+滚动信号）+ `isBottomPanelVisible` + `terminalSnapshots`/`updateTerminalSnapshots`（终端活跃快照，供 cwd 前缀归因）+ `versionStore`/`versionedPaths`/`snapshotIfEligible`（文件版本快照）+ `reload` 末尾后台 `preRecordBaselines`（进目录对既存 eligible 文本文件预录基线）。接受注入 `defaults: UserDefaults`（默认 `.standard`），sortColumn/sortAscending/showHidden 通过 didSet 持久化 |
-| `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look + 拖拽源（pasteboard writer）+ 变化标记色点 |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）+ `isBottomPanelVisible`。持有 FSWatcher 做目录实时刷新。接受注入 `defaults: UserDefaults`（默认 `.standard`），sortColumn/sortAscending/showHidden 通过 didSet 持久化 |
+| `FSWatcher.swift` | FSEvents 文件变化监听器：watch 当前目录 → 0.5s coalesce 去抖 → 信号回调触发 reload；只监听一级子项变化 |
+| `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look + 拖拽源（pasteboard writer） |
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
 | `ShellEscape.swift` | POSIX shell 路径转义纯函数（单引号包裹，Send Path to Terminal 用） |
-| `PreviewPane.swift` | 右侧文件预览面板：QLThumbnail 缩略图 + 元数据表（Kind/Size/Where/Created/Modified）+ 版本状态 + Quick Actions（Send Path / Reveal in Finder）；⌘⇧P toggle |
+| `PreviewPane.swift` | 右侧文件预览面板：QLThumbnail 缩略图 + 元数据表（Kind/Size/Where/Created/Modified）+ Quick Actions（Send Path / Reveal in Finder）；⌘⇧P toggle |
 
 ## 模块规范
 
 - 文件列表用 AppKit `NSTableView`，不用 SwiftUI `Table`：多选 / 拖拽（含 file promise）/ 就地重命名 / type-select / 万级实时增量刷新 / Column 视图等终局需求落在 SwiftUI 结构性弱区。SwiftUI 仅作壳与工具栏。
 - 目录 IO 一律走 `DirectoryLister`（`nonisolated`），不在视图层直接读文件系统。
 - 列表数据流单向：`WorkspaceModel.items` → `FileTableView`；交互经 `onOpen` 回调 → model 改状态 → 重新 list。
-- 不在本模块散用 libghostty / SQLite 符号；跨模块依赖经各自抽象层。
+- 不在本模块散用 libghostty 符号；跨模块依赖经各自抽象层。
 
 ## 依赖关系
 
-- 依赖：Foundation、AppKit、SwiftUI、Observation、QuickLookUI、QuickLookThumbnailing、UniformTypeIdentifiers；`WorkspaceModel` 持有 ChangeJournal 模块的 `FSWatcher` + `ChangeStore` + `VersionStore` + `IgnoreRules`（同 target 内跨模块依赖）。
+- 依赖：Foundation、AppKit、SwiftUI、Observation、QuickLookUI、QuickLookThumbnailing、UniformTypeIdentifiers。
 - 被依赖：`ContentView` 装载 `FileTableView` 与 `WorkspaceModel`。
 
 ## 变更日志
 
-- 2026-06-16 S21 版本 baseline 预录：`WorkspaceModel.reload` 末尾后台（QoS background，用 `allItems` 不阻塞 UI）调 `VersionStore.recordBaselines` 对既存文本文件预录基线（in-flight 去重、目录切换时重扫），修复「进目录对既存文件不录 baseline、首次外部修改拿不到真 before」。
-- 2026-06-16 S20 变化归因重构：删除 `activeTerminalSessionID`（贴当前选中 tab 的假信号），改为 `terminalSnapshots`（`NSLock` 保护，`ContentView` 经 `updateTerminalSnapshots` 在 tab 活跃/cwd/增删时推送）+ `FSWatcher` 后台队列 `readTerminalSnapshots` 读取。`handleFSEvents` 对每个事件经 `TerminalAttribution.attribute` 按 cwd 前缀做 per-event 归因。`TerminalSession` 新增 `lastActiveAt`（同 cwd tie-break）。
-- 2026-06-16 S18 `WorkspaceModel` 新增 `reveal(_ fileURLs: [URL])`：navigate 到首项父目录 → 设 `selectedURLs` + `revealSelection`（锚在 navigate 后的 `currentURL` 上，与 `DirectoryLister` 子项 URL 同构）。单 workspace 只展示一个目录，仅高亮与首项同父目录的项、跨父目录的忽略。表格选择信号 `scrollToURL: URL?` 升级为 `revealSelection: [URL]?`，`FileTableView` 用 `IndexSet` 一次性选中全部行 + 滚动首项（修复 Open Selection 多选只落单行）；变化列表点击定位退化为长度 1。供外部入口（Finder Services Reveal/Open Selection / URL Scheme）跨目录定位文件用。
-- 2026-06-15 S17 `WorkspaceModel` 注入 `defaults: UserDefaults` 参数（默认 `.standard`），隔离测试；sortColumn/sortAscending/showHidden 通过 didSet 持久化到 `defaults`，init 时恢复。所有 `UserDefaults.standard` 引用改为 `self.defaults`。
-- 2026-06-15 S16 新增 `PreviewPane.swift`（右侧预览面板：QLThumbnail + 元数据 + 版本状态 + Quick Actions）；`ContentView` 改为 HStack 分栏；⌘⇧P toggle。`WorkspaceModel.handleFSEvents` 新增 `changesEnabled` 开关守卫。
-- 2026-06-15 S14 WorkspaceModel 集成终端归因 + 版本快照：新增 `activeTerminalSessionID`（由 ContentView 从终端模块同步）传递给 `ChangeStore.recordBatch`；新增 `versionStore`（VersionStore）+ `versionedPaths`（Set）+ `snapshotIfEligible`（modified/added 事件触发，文本类 ≤1MB）。
-- 2026-06-15 S13 `isTerminalVisible` → `isBottomPanelVisible` 语义重命名（底部面板同时承载终端和变化列表）。
-- 2026-06-14 S10 拖拽到终端 + 变化感知增强：`FileTableView` 新增 `pasteboardWriterForRow`（文件行可拖出）+ name column 变化标记色点（绿=新增/橙=修改，30s 淡出）+ `scrollToURL` 滚动定位。`WorkspaceModel` 新增 `changeIndicators`（FSEvents 触发 → 30s Timer 清除）+ `scrollToURL`。`ContentView` 终端面板加 `.onDrop`（NSLock 保护并发 append）接收文件拖放；变化条目点击直接选中+滚动。6 个新单测（ChangeTimeGroup×6），72 个总计全通过。
-- 2026-06-14 S9 Send Path to Terminal（Context Bridge 首个切片）：右键菜单「发送路径到终端」（单选/多选，shell-escaped）+ ⌘⇧T 快捷键 + 终端隐藏时自动展开。新增 `ShellEscape.swift`（POSIX 单引号转义）。`FileTableView` 新增 `onSendPathToTerminal` 回调。10 个 ShellEscape 单测，66 个总计全通过。
-- 2026-06-14 S7 打开任意文件夹 + 文件名搜索（M1 收尾）：⌘O 打开文件夹（NSOpenPanel）+ Open Recent 菜单（RecentFolders，UserDefaults 持久化，10 项上限）+ 启动恢复上次目录（`lastOpenedFolder`）+ 拖放文件夹到窗口（`.onDrop` + UTType.fileURL）+ ⌘F 搜索栏（NSSearchField，SearchBarView）+ 文件名实时过滤（`localizedCaseInsensitiveContains`，`allItems` → `applySearch()` → `items`）+ Esc 关闭搜索。FileCommands 改为 `replacing: .newItem`（合并 Open + New Folder）；ViewCommands 添加 `replacing: .textEditing`（⌘F）。10 个新单测（RecentFolders×4 + SearchFilter×6），56 个总计全通过。
-- 2026-06-14 S4 路径导航 + 排序 + 隐藏文件：路径面包屑栏（可点击段跳转）+ NSTableView 四列列头排序（目录始终在前）+ ⌘⇧. 隐藏文件切换 + ⌘⌥C 复制当前路径。排序职责从 DirectoryLister 移至 WorkspaceModel（`sortedItems` 静态方法）。FocusedValue 用 `@Entry` 宏（macOS 26 SDK）。
-- 2026-06-14 S5 右键菜单 + 文件操作落地：NSMenu 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Trash（⌘⌫）/Rename（Enter 触发 inline editing，`doCommandBy:` 拦截 Esc 取消）/New Folder（⌘⇧N + 自动 rename）/Reveal in Finder/Copy Path。FileNSTableView 子类拦截 Return 键；`menu.autoenablesItems = false`；编辑中跳过 `reloadData()`；`clickedRow` 越界保护。
-- 2026-06-14 S6 Quick Look 预览：空格键 toggle `QLPreviewPanel`；`FileNSTableView` 持有 QL 所有权；`Coordinator` 实现 `QLPreviewPanelDataSource`+`Delegate`；`handle` 只转发↑↓箭头 + 显式处理空格关闭。`updateNSView` 加 `itemsChanged` 守卫防止无关 `@Observable` 状态变化触发 `reloadData()` 破坏 QL 面板。
+- 2026-06-16 D1 Kill Change Journal：移除 ChangeJournal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 简化后迁入本模块（纯信号回调，无事件分类），WorkspaceModel 剥离 ~10 属性 + ~7 方法，FileTableView 移除变化色点，PreviewPane 移除版本 section，移除 GRDB 依赖。
+- 2026-06-16 S18 `WorkspaceModel` 新增 `reveal(_ fileURLs: [URL])`：navigate 到首项父目录 → 设 `selectedURLs` + `revealSelection`。表格选择信号升级为 `revealSelection: [URL]?`，`FileTableView` 用 `IndexSet` 一次性选中全部行 + 滚动首项。供外部入口（Finder Services Reveal/Open Selection / URL Scheme）跨目录定位文件用。
+- 2026-06-15 S17 `WorkspaceModel` 注入 `defaults: UserDefaults` 参数（默认 `.standard`），隔离测试；sortColumn/sortAscending/showHidden 通过 didSet 持久化到 `defaults`，init 时恢复。
+- 2026-06-15 S16 新增 `PreviewPane.swift`（右侧预览面板：QLThumbnail + 元数据 + Quick Actions）；`ContentView` 改为 HStack 分栏；⌘⇧P toggle。
+- 2026-06-15 S13 `isTerminalVisible` → `isBottomPanelVisible` 语义重命名（底部面板承载终端）。
+- 2026-06-14 S10 拖拽到终端：`FileTableView` 新增 `pasteboardWriterForRow`（文件行可拖出）。`ContentView` 终端面板加 `.onDrop` 接收文件拖放。
+- 2026-06-14 S9 Send Path to Terminal：右键菜单「发送路径到终端」（单选/多选，shell-escaped）+ ⌘⇧T 快捷键。新增 `ShellEscape.swift`。
+- 2026-06-14 S7 打开任意文件夹 + 文件名搜索（M1 收尾）：⌘O 打开文件夹 + Open Recent + 启动恢复 + 拖放文件夹 + ⌘F 搜索栏 + 文件名实时过滤 + Esc 关闭搜索。
+- 2026-06-14 S5 右键菜单 + 文件操作落地：NSMenu 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Trash/Rename/New Folder/Reveal in Finder/Copy Path。
+- 2026-06-14 S4 路径导航 + 排序 + 隐藏文件：路径面包屑栏 + NSTableView 四列列头排序 + ⌘⇧. 隐藏文件 + ⌘⌥C 复制路径。
+- 2026-06-14 S6 Quick Look 预览：空格键 toggle `QLPreviewPanel`；`updateNSView` 加 `itemsChanged` 守卫。
 - 2026-06-13 S1 落地：启动即家目录的文件列表（四列元数据 + 系统图标）+ 双击进入 / ⌘↑ 返回上级。
