@@ -64,9 +64,12 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         FSEventStreamRelease(stream)
         self.stream = nil
         watchedDirectory = nil
-        flushWork?.cancel()
-        flushWork = nil
-        if !pending.isEmpty {
+        // 在 watcher queue 上清理 pending，与在途 handleRawEvents/flush 串行，
+        // 避免主线程（navigate→stop）与后台回调并发 mutate 同一字典（UB）。
+        queue.sync {
+            flushWork?.cancel()
+            flushWork = nil
+            guard !pending.isEmpty else { return }
             let batch = pending.map { (path: $0.key, type: $0.value, snapshots: pendingSnapshots[$0.key] ?? []) }
             pending.removeAll()
             pendingSnapshots.removeAll()

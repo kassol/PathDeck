@@ -70,9 +70,12 @@ final class WorkspaceModel {
     private var indicatorTimers: [String: Timer] = [:]
 
     /// 终端活跃快照，由 `ContentView` 推送、`FSWatcher` 后台队列读取做归因。
-    /// `NSLock` 保护跨线程读写（主线程写 / watcher 队列读）。
-    private let snapshotsLock = NSLock()
-    private var terminalSnapshots: [TerminalActivitySnapshot] = []
+    /// `NSLock` 保护跨线程读写（主线程写 / watcher 队列读）；`@ObservationIgnored`
+    /// 剥离 observation 追踪，使锁成为唯一并发屏障（属性 private、无 view 订阅）。
+    @ObservationIgnored private let snapshotsLock = NSLock()
+    @ObservationIgnored private var terminalSnapshots: [TerminalActivitySnapshot] = []
+    /// 预录 baseline 的 in-flight 去重标志（主线程读写），防频繁 reload 派发重叠的全量后台扫描。
+    @ObservationIgnored private var isPreRecordingBaselines = false
 
     init(root: URL? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -364,10 +367,12 @@ final class WorkspaceModel {
 
     /// 进目录后台预录既存 eligible 文本文件基线（字节预算兜底大目录，不阻塞 UI）。
     private func preRecordBaselines() {
-        guard let store = versionStore else { return }
+        guard let store = versionStore, !isPreRecordingBaselines else { return }
         let dir = currentURL.path(percentEncoded: false)
         let urls = allItems.filter { !$0.isDirectory }.map(\.url)
-        DispatchQueue.global(qos: .background).async {
+        guard !urls.isEmpty else { return }
+        isPreRecordingBaselines = true
+        DispatchQueue.global(qos: .background).async { [weak self] in
             let result = VersionStore.recordBaselines(
                 store, urls: urls, directory: dir, byteBudget: 16 * 1024 * 1024
             )
@@ -375,6 +380,7 @@ final class WorkspaceModel {
                 NSLog("[PathDeck] baseline preRecord truncated in %@: recorded=%d skipped=%d (16MB budget)",
                       dir, result.recorded, result.skipped)
             }
+            DispatchQueue.main.async { self?.isPreRecordingBaselines = false }
         }
     }
 }
