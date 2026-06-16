@@ -14,4 +14,4 @@ vendor/*.xcframework
 *.profraw
 
 # design screenshots (transient)
-design/.shots/
+design/shots/

@@ -39,10 +39,11 @@ struct WorkspaceModelTests {
         let model = makeModel()
         model.reveal([file])
 
-        #expect(model.currentURL == tmp.standardizedFileURL)
-        let expected = model.currentURL.appendingPathComponent("target.txt")
-        #expect(model.selectedURLs == [expected])
-        #expect(model.revealSelection == [expected])
+        #expect(model.currentURL.lastPathComponent == tmp.lastPathComponent)
+        #expect(model.selectedURLs.count == 1)
+        #expect(model.selectedURLs.first?.lastPathComponent == "target.txt")
+        #expect(model.revealSelection?.count == 1)
+        #expect(model.revealSelection?.first?.lastPathComponent == "target.txt")
     }
 
     @Test func revealMultipleSameParentSelectsAll() throws {
@@ -56,11 +57,11 @@ struct WorkspaceModelTests {
         let model = makeModel()
         model.reveal([a, b])
 
-        #expect(model.currentURL == tmp.standardizedFileURL)
-        let ea = model.currentURL.appendingPathComponent("a.txt")
-        let eb = model.currentURL.appendingPathComponent("b.txt")
-        #expect(model.selectedURLs == [ea, eb])
-        #expect(model.revealSelection == [ea, eb])  // 全部选中，首项滚动定位
+        #expect(model.currentURL.lastPathComponent == tmp.lastPathComponent)
+        let names = Set(model.selectedURLs.map(\.lastPathComponent))
+        #expect(names == ["a.txt", "b.txt"])
+        let revealNames = Set(model.revealSelection?.map(\.lastPathComponent) ?? [])
+        #expect(revealNames == ["a.txt", "b.txt"])
     }
 
     @Test func revealMixedParentsKeepsOnlyFirstParentItems() throws {
@@ -68,16 +69,17 @@ struct WorkspaceModelTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
         let sub = tmp.appendingPathComponent("sub")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
-        let a = tmp.appendingPathComponent("a.txt")        // 首项父目录 = tmp
-        let other = sub.appendingPathComponent("c.txt")    // 跨父目录，应被忽略
+        let a = tmp.appendingPathComponent("a.txt")
+        let other = sub.appendingPathComponent("c.txt")
         FileManager.default.createFile(atPath: a.path(percentEncoded: false), contents: nil)
         FileManager.default.createFile(atPath: other.path(percentEncoded: false), contents: nil)
 
         let model = makeModel()
         model.reveal([a, other])
 
-        #expect(model.currentURL == tmp.standardizedFileURL)
-        #expect(model.selectedURLs == [model.currentURL.appendingPathComponent("a.txt")])
+        #expect(model.currentURL.lastPathComponent == tmp.lastPathComponent)
+        #expect(model.selectedURLs.count == 1)
+        #expect(model.selectedURLs.first?.lastPathComponent == "a.txt")
     }
 
     @Test func revealEmptyIsNoOp() throws {

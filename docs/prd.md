@@ -1164,33 +1164,17 @@ Recent Changes 中可临时显示被忽略变化
 
 ### FR-EXT-001：Finder 右键 Open in PathDeck
 
-优先级：P1
+~~优先级：P1~~ → **Kill**
 
-通过 Finder Extension / Services 提供从 Finder 进入 PathDeck 的入口。
+通过 FinderSync Extension 提供从 Finder 进入 PathDeck 的右键菜单入口。
 
-验收标准：
-
-```txt
-选中文件夹 → Open in PathDeck
-选中文件 → Reveal in PathDeck
-多选文件 → Open Selection in PathDeck
-```
+**决策**：Kill FinderSync Extension。FinderSync 只能承载右键菜单，无法提供主工作台能力；投入产出比不足。外部入口由 Services + URL Scheme + Open With + CLI helper 覆盖，已满足从外部唤起 PathDeck 的全部场景。
 
 ---
 
 ### FR-EXT-002：Finder 右键 Open Terminal Here in PathDeck
 
-优先级：P2
-
-从 Finder 中直接打开 PathDeck 并进入 Terminal。
-
-验收标准：
-
-```txt
-选中文件夹后触发
-PathDeck 打开该文件夹
-Terminal 自动打开且 cwd 为该文件夹
-```
+~~优先级：P2~~ → **Kill**（同 FR-EXT-001 理由：FinderSync Extension 承载不了主工作台能力）
 
 ---
 
@@ -1899,7 +1883,7 @@ Restore Previous Version
 范围：
 
 ```txt
-Finder 右键 Open in PathDeck
+Finder 右键 Open in PathDeck  ← [Kill] FinderSync Extension 承载不了主工作台能力，投入产出比不足
 Services
 URL Scheme
 偏好设置完善

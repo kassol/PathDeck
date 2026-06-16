@@ -14,18 +14,17 @@ struct PerformanceTests {
         return dir
     }
 
-    @Test func reloadThousandFiles() throws {
+    @Test func coldOpenThousandFiles() throws {
         let dir = try createTempDirectory(fileCount: 1_000)
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let suite = UserDefaults(suiteName: "PathDeckPerfTests-\(UUID().uuidString)")!
-        let model = WorkspaceModel(root: dir, defaults: suite)
         let start = CFAbsoluteTimeGetCurrent()
-        model.reload()
+        let model = WorkspaceModel(root: dir, defaults: suite)
         let elapsed = CFAbsoluteTimeGetCurrent() - start
 
         #expect(model.items.count == 1_000)
-        #expect(elapsed < 1.0, "reload() took \(elapsed)s, expected < 1s")
+        #expect(elapsed < 1.0, "cold open took \(elapsed)s, expected < 1s")
     }
 
     @Test func sortThousandFiles() throws {
@@ -63,5 +62,57 @@ struct PerformanceTests {
 
         #expect(!filtered.isEmpty)
         #expect(elapsed < 0.1, "filter took \(elapsed)s, expected < 0.1s")
+    }
+
+    // MARK: - 10k file baseline (PRD FR-FILE-002 / §14.1)
+
+    @Test func coldOpenTenThousandFiles() throws {
+        let dir = try createTempDirectory(fileCount: 10_000)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let suite = UserDefaults(suiteName: "PathDeckPerfTests-\(UUID().uuidString)")!
+        let start = CFAbsoluteTimeGetCurrent()
+        let model = WorkspaceModel(root: dir, defaults: suite)
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        #expect(model.items.count == 10_000)
+        #expect(elapsed < 5.0, "cold open took \(elapsed)s, expected < 5s")
+    }
+
+    @Test func sortTenThousandFiles() throws {
+        let dir = try createTempDirectory(fileCount: 10_000)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let items = try DirectoryLister.list(dir, includeHidden: false)
+        let start = CFAbsoluteTimeGetCurrent()
+        let _ = WorkspaceModel.sortedItems(items, by: .name, ascending: true)
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        #expect(elapsed < 1.0, "sort took \(elapsed)s, expected < 1s")
+    }
+
+    @Test func sortByDateTenThousandFiles() throws {
+        let dir = try createTempDirectory(fileCount: 10_000)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let items = try DirectoryLister.list(dir, includeHidden: false)
+        let start = CFAbsoluteTimeGetCurrent()
+        let _ = WorkspaceModel.sortedItems(items, by: .date, ascending: false)
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        #expect(elapsed < 1.0, "date sort took \(elapsed)s, expected < 1s")
+    }
+
+    @Test func filterTenThousandFiles() throws {
+        let dir = try createTempDirectory(fileCount: 10_000)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let items = try DirectoryLister.list(dir, includeHidden: false)
+        let start = CFAbsoluteTimeGetCurrent()
+        let filtered = WorkspaceModel.filterItems(items, query: "file_009")
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        #expect(!filtered.isEmpty)
+        #expect(elapsed < 0.5, "filter took \(elapsed)s, expected < 0.5s")
     }
 }
