@@ -36,7 +36,6 @@ final class WorkspaceModel {
     var revealSelection: [URL]?
     var isSearching: Bool = false
     var isBottomPanelVisible: Bool = false
-    var activeTerminalSessionID: UUID?
     var searchQuery: String = "" {
         didSet { applySearch() }
     }
@@ -69,6 +68,11 @@ final class WorkspaceModel {
     private var changeStore: ChangeStore?
     private(set) var versionStore: VersionStore?
     private var indicatorTimers: [String: Timer] = [:]
+
+    /// 终端活跃快照，由 `ContentView` 推送、`FSWatcher` 后台队列读取做归因。
+    /// `NSLock` 保护跨线程读写（主线程写 / watcher 队列读）。
+    private let snapshotsLock = NSLock()
+    private var terminalSnapshots: [TerminalActivitySnapshot] = []
 
     init(root: URL? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -110,7 +114,9 @@ final class WorkspaceModel {
             NSLog("[PathDeck] VersionStore init failed: \(error)")
         }
 
-        watcher = FSWatcher { [weak self] events in
+        watcher = FSWatcher(
+            snapshotProvider: { [weak self] in self?.readTerminalSnapshots() ?? [] }
+        ) { [weak self] events in
             DispatchQueue.main.async {
                 self?.handleFSEvents(events)
             }
@@ -292,7 +298,20 @@ final class WorkspaceModel {
         versionedPaths = Set((try? versionStore?.pathsWithVersions(in: dir)) ?? [])
     }
 
-    private func handleFSEvents(_ events: [(path: String, type: ChangeEventType)]) {
+    /// 由 `ContentView` 在终端 tab 活跃/cwd/增删变化时推送最新快照。
+    func updateTerminalSnapshots(_ snapshots: [TerminalActivitySnapshot]) {
+        snapshotsLock.lock()
+        terminalSnapshots = snapshots
+        snapshotsLock.unlock()
+    }
+
+    private func readTerminalSnapshots() -> [TerminalActivitySnapshot] {
+        snapshotsLock.lock()
+        defer { snapshotsLock.unlock() }
+        return terminalSnapshots
+    }
+
+    private func handleFSEvents(_ events: [(path: String, type: ChangeEventType, snapshots: [TerminalActivitySnapshot])]) {
         let accepted = events.filter { event in
             let fileName = URL(fileURLWithPath: event.path).lastPathComponent
             return !IgnoreRules.shouldIgnore(fileName: fileName)
@@ -303,8 +322,11 @@ final class WorkspaceModel {
 
         let dir = currentURL.path(percentEncoded: false)
         if changesEnabled {
-            let batch = accepted.map { (path: $0.path, type: $0.type, directory: dir) }
-            try? changeStore?.recordBatch(batch, terminalSessionID: activeTerminalSessionID)
+            let batch = accepted.map { event -> (path: String, type: ChangeEventType, directory: String, terminalSessionID: UUID?) in
+                let sessionID = TerminalAttribution.attribute(eventPath: event.path, snapshots: event.snapshots)
+                return (path: event.path, type: event.type, directory: dir, terminalSessionID: sessionID)
+            }
+            try? changeStore?.recordBatch(batch)
         }
 
         for event in accepted where event.type == .added || event.type == .modified {

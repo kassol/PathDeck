@@ -85,7 +85,10 @@ struct ContentView: View {
                 UserDefaults.standard.set(visible, forKey: Self.bottomPanelVisibleKey)
             }
             .onChange(of: activeTerminalID) { _, newID in
-                model.activeTerminalSessionID = newID
+                if let newID, let idx = terminalSessions.firstIndex(where: { $0.id == newID }) {
+                    terminalSessions[idx].lastActiveAt = Date()
+                }
+                model.updateTerminalSnapshots(buildSnapshots())
             }
             .onChange(of: router.pending) { _, _ in
                 handleExternalRoute()
@@ -132,6 +135,7 @@ struct ContentView: View {
             if let idx = terminalSessions.firstIndex(where: { $0.id == id }) {
                 terminalSessions[idx].currentCwd = url
                 saveTerminalTabState()
+                model.updateTerminalSnapshots(buildSnapshots())
             }
         }
         terminalEngine.onPendingDropped = { id, count, reason in
@@ -338,6 +342,18 @@ struct ContentView: View {
             model.isBottomPanelVisible = false
         } else if terminalSessions.isEmpty {
             activeBottomTab = .changes
+        }
+        model.updateTerminalSnapshots(buildSnapshots())
+    }
+
+    /// 把当前终端 tab 映射为归因快照（cwd = currentCwd，活跃时刻 = lastActiveAt）。
+    private func buildSnapshots() -> [TerminalActivitySnapshot] {
+        terminalSessions.map { session in
+            TerminalActivitySnapshot(
+                id: session.id,
+                cwd: session.currentCwd,
+                lastActive: session.lastActiveAt ?? .distantPast
+            )
         }
     }
 

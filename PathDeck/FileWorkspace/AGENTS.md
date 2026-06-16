@@ -12,7 +12,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `changeIndicators`（30s 淡出）+ `revealSelection`（命令式多选+滚动信号）+ `isBottomPanelVisible` + `activeTerminalSessionID`（终端归因）+ `versionStore`/`versionedPaths`/`snapshotIfEligible`（文件版本快照）。接受注入 `defaults: UserDefaults`（默认 `.standard`），sortColumn/sortAscending/showHidden 通过 didSet 持久化 |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `changeIndicators`（30s 淡出）+ `revealSelection`（命令式多选+滚动信号）+ `isBottomPanelVisible` + `terminalSnapshots`/`updateTerminalSnapshots`（终端活跃快照，供 cwd 前缀归因）+ `versionStore`/`versionedPaths`/`snapshotIfEligible`（文件版本快照）。接受注入 `defaults: UserDefaults`（默认 `.standard`），sortColumn/sortAscending/showHidden 通过 didSet 持久化 |
 | `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look + 拖拽源（pasteboard writer）+ 变化标记色点 |
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
@@ -33,6 +33,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-16 S20 变化归因重构：删除 `activeTerminalSessionID`（贴当前选中 tab 的假信号），改为 `terminalSnapshots`（`NSLock` 保护，`ContentView` 经 `updateTerminalSnapshots` 在 tab 活跃/cwd/增删时推送）+ `FSWatcher` 后台队列 `readTerminalSnapshots` 读取。`handleFSEvents` 对每个事件经 `TerminalAttribution.attribute` 按 cwd 前缀做 per-event 归因。`TerminalSession` 新增 `lastActiveAt`（同 cwd tie-break）。
 - 2026-06-16 S18 `WorkspaceModel` 新增 `reveal(_ fileURLs: [URL])`：navigate 到首项父目录 → 设 `selectedURLs` + `revealSelection`（锚在 navigate 后的 `currentURL` 上，与 `DirectoryLister` 子项 URL 同构）。单 workspace 只展示一个目录，仅高亮与首项同父目录的项、跨父目录的忽略。表格选择信号 `scrollToURL: URL?` 升级为 `revealSelection: [URL]?`，`FileTableView` 用 `IndexSet` 一次性选中全部行 + 滚动首项（修复 Open Selection 多选只落单行）；变化列表点击定位退化为长度 1。供外部入口（Finder Services Reveal/Open Selection / URL Scheme）跨目录定位文件用。
 - 2026-06-15 S17 `WorkspaceModel` 注入 `defaults: UserDefaults` 参数（默认 `.standard`），隔离测试；sortColumn/sortAscending/showHidden 通过 didSet 持久化到 `defaults`，init 时恢复。所有 `UserDefaults.standard` 引用改为 `self.defaults`。
 - 2026-06-15 S16 新增 `PreviewPane.swift`（右侧预览面板：QLThumbnail + 元数据 + 版本状态 + Quick Actions）；`ContentView` 改为 HStack 分栏；⌘⇧P toggle。`WorkspaceModel.handleFSEvents` 新增 `changesEnabled` 开关守卫。

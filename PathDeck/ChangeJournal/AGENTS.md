@@ -11,20 +11,21 @@
 | 文件 | 职责 |
 |---|---|
 | `ChangeEvent.swift` | 变化事件值类型 model（`Sendable`，不依赖 GRDB）+ `ChangeTimeGroup` 枚举 + `grouped()` 时间分组纯函数 + `terminalSessionID` 归因字段 |
-| `ChangeStore.swift` | GRDB 封装：WAL 模式 SQLite（`changes.db`）初始化、schema migration（v1+v2）、批量写入（含终端归因）、按目录查询 |
+| `ChangeStore.swift` | GRDB 封装：WAL 模式 SQLite（`changes.db`）初始化、schema migration（v1+v2）、批量写入（per-event 终端归因）、按目录查询 |
 | `VersionStore.swift` | GRDB 封装：独立 SQLite（`versions.db`）文件版本快照存储、hash 去重、per-file 上限清理、eligibility 判定、content blob 读取。大小阈值 / 保留条数 / 启用开关从 `@AppStorage` 动态读取 |
 | `DiffEngine.swift` | Myers diff 算法：逐行 LCS 对比，产出 `[DiffLine]`（added/deleted/unchanged + 行号） |
 | `DiffView.swift` | SwiftUI inline diff 视图 + 恢复上一版确认流程（恢复前自动快照保证可撤销）|
-| `FSWatcher.swift` | FSEvents 封装（`nonisolated`，后台 DispatchQueue）：监听指定目录、事件 flag 分类、跨批次时间窗口聚合（0.5s debounce + `mergeType` 合并）、回调通知 |
+| `FSWatcher.swift` | FSEvents 封装（`nonisolated`，后台 DispatchQueue）：监听指定目录、事件 flag 分类、跨批次时间窗口聚合（0.5s debounce + `mergeType` 合并）、入队时刻捕获终端活跃快照（coalesce 不覆盖）、回调通知 |
 | `ChangeListView.swift` | SwiftUI 变化列表视图：类型过滤 + 时间分组 + 行点击定位 + `IgnoreRulesPopover`（internal 可见性，Settings 复用）+ 终端归因图标 + 版本快照图标（可点击触发 diff） |
 | `IgnoreRules.swift` | 忽略规则工具：默认模式 + 用户自定义 glob（UserDefaults）+ `fnmatch` 匹配 |
+| `TerminalAttribution.swift` | 文件变化 → 终端 session 弱关联归因纯函数 + `TerminalActivitySnapshot` 值类型（cwd 前缀匹配，最深优先、同深度取最近活跃，不匹配 → nil） |
 
 ## 模块规范
 
 - GRDB 依赖隔离在 `ChangeStore` / `VersionStore` 内，`ChangeEvent` / `FileVersion` 不引用任何 GRDB 类型。
 - SQLite 模式：`journal_mode = WAL` + `synchronous = NORMAL` + `busy_timeout = 5s` + `auto_vacuum = INCREMENTAL`。进程 crash 不丢不坏；仅极端 OS crash 可能丢最后一个 WAL frame（对 change journal 可接受）。
 - 数据库路径：`~/Library/Application Support/in.riverflows.PathDeck/changes.db`（事件）、`versions.db`（版本快照，独立数据库，含大 blob）。
-- FSWatcher 是 `nonisolated final class: @unchecked Sendable`，C 回调在后台 DispatchQueue 触发。事件先累积到 `pending` 字典（按路径合并类型），静默 0.5 秒后统一 flush 给 handler。调用方（`WorkspaceModel`）dispatch 到主队列后写入 ChangeStore + 刷新 UI。
+- FSWatcher 是 `nonisolated final class: @unchecked Sendable`，C 回调在后台 DispatchQueue 触发。事件先累积到 `pending` 字典（按路径合并类型）+ 首次见到该 path 时经 `snapshotProvider` 捕获终端活跃快照存入 `pendingSnapshots`，静默 0.5 秒后统一 flush 给 handler（含 per-path 快照）。调用方（`WorkspaceModel`）dispatch 到主队列后写入 ChangeStore + 刷新 UI。
 - 事件类型合并（`mergeType`）：`added→modified=added`、`modified→added=modified`（safe-save）、`deleted→added=modified`（replace）、其余保持 existing。
 - 事件分类（`classify`）用 FSEvents flag 组合 + `FileManager.fileExists` ground truth 兜底：`renamed+exists → modified`（macOS atomic save）；`renamed+created+exists → added`（新文件 rename 到位）。文件和目录事件均处理。
 - Schema migration 由 GRDB `DatabaseMigrator` 管理，版本化、幂等。
@@ -37,6 +38,7 @@
 
 ## 变更日志
 
+- 2026-06-16 S20 变化归因纯函数化 + cwd 匹配：新增 `TerminalAttribution.swift`（`attribute(eventPath:snapshots:)` 纯函数 + `TerminalActivitySnapshot` 值类型）——归因从「贴当前选中 tab」改为「事件路径 ↔ session cwd 前缀匹配」，最深 cwd 优先、同深度取最近活跃，cwd 缺失/不匹配返回 nil（PRD §R2 不做虚假精确归因）。`FSWatcher` 在事件入队时刻（首次见 path）经 `snapshotProvider` 捕获终端活跃快照、coalesce 不覆盖（消除 flush 时刻读的跨 tab 切换污染），随 batch 带出。`ChangeStore.recordBatch` 从整批单一 `terminalSessionID` 改为 per-event 第四字段（同批不同文件可属不同终端）。165 个单测通过（+9：TerminalAttributionTests ×8 + recordBatchPerEventSessionID）。
 - 2026-06-15 S16 `VersionStore` 配置化：`maxFileSize` / `maxVersionsPerFile` / `isEnabled` 从 `UserDefaults` 动态读取（Settings 窗口对应 `versionMaxSizeKB` / `versionMaxCount` / `versionsEnabled`）。`IgnoreRulesPopover` 从 `private` 改为 `internal`（Settings 窗口复用）。
 - 2026-06-15 S15 Diff View + Restore + FSWatcher 聚合重写：新增 `DiffEngine`（Myers diff）+ `DiffView`（inline diff + restore，`.task(id: path)` 响应路径切换，restore 前快照失败中止）；`VersionStore` 扩展 `versionContent` / `latestVersionWithContent` / `previousVersionWithContent`（跳过与当前内容相同 hash 的版本）；`ChangeListView` 行导航与版本图标拆为独立点击区域；`FSWatcher` 从单批次 `seen` 去重重写为跨批次时间窗口聚合（`pending` 字典 + 0.5s debounce + `mergeType` 6 种组合）+ `classify` 修正 `renamed+exists → modified`；`IgnoreRules` 新增 `*.sb-*` / `._*` / `*.tmp` 默认规则；`WorkspaceModel` 移除 `recentEventKeys` 补丁式去重。106 个单测通过（+16）。
 - 2026-06-15 S14 终端活跃期间变化归因 + 轻量文件版本快照：`ChangeEvent` 新增 `terminalSessionID` 归因字段；`ChangeStore` v2 migration 加列 + `recordBatch` 接受 `terminalSessionID` 参数；新增 `VersionStore`（独立 `versions.db`，`saveVersion` hash 去重 + per-file 10 版本上限自动清理 + `isEligible` 文本类 ≤1MB 判定）；`ChangeListView` 新增终端归因图标 + 版本快照图标 + `versionedPaths` 参数；`WorkspaceModel` 新增 `activeTerminalSessionID` / `versionStore` / `versionedPaths` / `snapshotIfEligible`。M3 闭合，M4 基础落地。90 个单测通过（新增 ChangeStoreTests ×3 + VersionStoreTests ×5）。

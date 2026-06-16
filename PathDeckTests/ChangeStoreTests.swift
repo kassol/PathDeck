@@ -18,8 +18,8 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try store.recordBatch([
-            (path: "/tmp/test.txt", type: .added, directory: "/tmp"),
-            (path: "/tmp/other.txt", type: .modified, directory: "/tmp"),
+            (path: "/tmp/test.txt", type: .added, directory: "/tmp", terminalSessionID: nil),
+            (path: "/tmp/other.txt", type: .modified, directory: "/tmp", terminalSessionID: nil),
         ])
 
         let events = try store.recentEvents(in: "/tmp")
@@ -33,8 +33,8 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try store.recordBatch([
-            (path: "/a/file.txt", type: .added, directory: "/a"),
-            (path: "/b/file.txt", type: .added, directory: "/b"),
+            (path: "/a/file.txt", type: .added, directory: "/a", terminalSessionID: nil),
+            (path: "/b/file.txt", type: .added, directory: "/b", terminalSessionID: nil),
         ])
 
         let aEvents = try store.recentEvents(in: "/a")
@@ -49,11 +49,11 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try store.recordBatch([
-            (path: "/tmp/first.txt", type: .added, directory: "/tmp"),
+            (path: "/tmp/first.txt", type: .added, directory: "/tmp", terminalSessionID: nil),
         ])
         Thread.sleep(forTimeInterval: 0.05)
         try store.recordBatch([
-            (path: "/tmp/second.txt", type: .modified, directory: "/tmp"),
+            (path: "/tmp/second.txt", type: .modified, directory: "/tmp", terminalSessionID: nil),
         ])
 
         let events = try store.recentEvents(in: "/tmp")
@@ -67,7 +67,7 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let batch = (0..<10).map { i in
-            (path: "/tmp/file\(i).txt", type: ChangeEventType.added, directory: "/tmp")
+            (path: "/tmp/file\(i).txt", type: ChangeEventType.added, directory: "/tmp", terminalSessionID: UUID?.none)
         }
         try store.recordBatch(batch)
 
@@ -91,7 +91,7 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try store.recordBatch([
-            (path: "/Users/kassol/Documents/report.pdf", type: .added, directory: "/Users/kassol/Documents"),
+            (path: "/Users/kassol/Documents/report.pdf", type: .added, directory: "/Users/kassol/Documents", terminalSessionID: nil),
         ])
 
         let events = try store.recentEvents(in: "/Users/kassol/Documents")
@@ -106,8 +106,7 @@ struct ChangeStoreTests {
 
         let sessionID = UUID()
         try store.recordBatch(
-            [(path: "/tmp/a.txt", type: .added, directory: "/tmp")],
-            terminalSessionID: sessionID
+            [(path: "/tmp/a.txt", type: .added, directory: "/tmp", terminalSessionID: sessionID)]
         )
 
         let events = try store.recentEvents(in: "/tmp")
@@ -121,7 +120,7 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try store.recordBatch([
-            (path: "/tmp/b.txt", type: .modified, directory: "/tmp"),
+            (path: "/tmp/b.txt", type: .modified, directory: "/tmp", terminalSessionID: nil),
         ])
 
         let events = try store.recentEvents(in: "/tmp")
@@ -135,12 +134,11 @@ struct ChangeStoreTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         try store.recordBatch([
-            (path: "/tmp/old.txt", type: .added, directory: "/tmp"),
+            (path: "/tmp/old.txt", type: .added, directory: "/tmp", terminalSessionID: nil),
         ])
         let sessionID = UUID()
         try store.recordBatch(
-            [(path: "/tmp/new.txt", type: .added, directory: "/tmp")],
-            terminalSessionID: sessionID
+            [(path: "/tmp/new.txt", type: .added, directory: "/tmp", terminalSessionID: sessionID)]
         )
 
         let events = try store.recentEvents(in: "/tmp")
@@ -149,5 +147,23 @@ struct ChangeStoreTests {
         let newEvent = events.first { $0.fileName == "new.txt" }
         #expect(oldEvent?.terminalSessionID == nil)
         #expect(newEvent?.terminalSessionID == sessionID)
+    }
+
+    @Test
+    func recordBatchPerEventSessionID() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let sessionID = UUID()
+        try store.recordBatch([
+            (path: "/tmp/x.txt", type: .added, directory: "/tmp", terminalSessionID: sessionID),
+            (path: "/tmp/y.txt", type: .modified, directory: "/tmp", terminalSessionID: nil),
+        ])
+
+        let events = try store.recentEvents(in: "/tmp")
+        let x = events.first { $0.fileName == "x.txt" }
+        let y = events.first { $0.fileName == "y.txt" }
+        #expect(x?.terminalSessionID == sessionID)
+        #expect(y?.terminalSessionID == nil)
     }
 }

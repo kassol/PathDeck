@@ -40,15 +40,14 @@ final class ChangeStore {
     }
 
     func recordBatch(
-        _ events: [(path: String, type: ChangeEventType, directory: String)],
-        terminalSessionID: UUID? = nil
+        _ events: [(path: String, type: ChangeEventType, directory: String, terminalSessionID: UUID?)]
     ) throws {
         guard !events.isEmpty else { return }
         let now = Date()
-        let sessionStr = terminalSessionID?.uuidString
         try dbQueue.write { db in
             for event in events {
                 let fileName = (event.path as NSString).lastPathComponent
+                let sessionStr = event.terminalSessionID?.uuidString
                 try db.execute(
                     sql: """
                         INSERT INTO change_events (path, fileName, eventType, timestamp, directory, terminalSessionID)

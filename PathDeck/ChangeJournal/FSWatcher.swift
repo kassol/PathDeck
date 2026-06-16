@@ -4,13 +4,19 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private var watchedDirectory: String?
     private let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
-    private let handler: @Sendable ([(path: String, type: ChangeEventType)]) -> Void
+    private let handler: @Sendable ([(path: String, type: ChangeEventType, snapshots: [TerminalActivitySnapshot])]) -> Void
+    private let snapshotProvider: @Sendable () -> [TerminalActivitySnapshot]
 
     private var pending: [String: ChangeEventType] = [:]
+    private var pendingSnapshots: [String: [TerminalActivitySnapshot]] = [:]
     private var flushWork: DispatchWorkItem?
     private static let coalesceWindow: TimeInterval = 0.5
 
-    init(handler: @escaping @Sendable ([(path: String, type: ChangeEventType)]) -> Void) {
+    init(
+        snapshotProvider: @escaping @Sendable () -> [TerminalActivitySnapshot] = { [] },
+        handler: @escaping @Sendable ([(path: String, type: ChangeEventType, snapshots: [TerminalActivitySnapshot])]) -> Void
+    ) {
+        self.snapshotProvider = snapshotProvider
         self.handler = handler
     }
 
@@ -61,8 +67,9 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         flushWork?.cancel()
         flushWork = nil
         if !pending.isEmpty {
-            let batch = pending.map { (path: $0.key, type: $0.value) }
+            let batch = pending.map { (path: $0.key, type: $0.value, snapshots: pendingSnapshots[$0.key] ?? []) }
             pending.removeAll()
+            pendingSnapshots.removeAll()
             handler(batch)
         }
     }
@@ -82,6 +89,11 @@ nonisolated final class FSWatcher: @unchecked Sendable {
             guard parent == watchedDir else { continue }
             guard let type = Self.classify(flag: flag, path: path) else { continue }
             pending[path] = Self.mergeType(existing: pending[path], new: type)
+            // 入队时刻（首次见到该 path）捕获终端活跃快照——最接近写入时刻；
+            // coalesce 后续不覆盖，消除「flush 时刻读、跨 tab 切换污染」。
+            if pendingSnapshots[path] == nil {
+                pendingSnapshots[path] = snapshotProvider()
+            }
         }
 
         guard !pending.isEmpty else { return }
@@ -99,8 +111,9 @@ nonisolated final class FSWatcher: @unchecked Sendable {
 
     private func flush() {
         guard !pending.isEmpty else { return }
-        let batch = pending.map { (path: $0.key, type: $0.value) }
+        let batch = pending.map { (path: $0.key, type: $0.value, snapshots: pendingSnapshots[$0.key] ?? []) }
         pending.removeAll()
+        pendingSnapshots.removeAll()
         handler(batch)
     }
 
