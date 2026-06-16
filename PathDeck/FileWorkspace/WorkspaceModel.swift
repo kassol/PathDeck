@@ -248,6 +248,7 @@ final class WorkspaceModel {
         allItems = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
         applySearch()
         refreshChanges()
+        preRecordBaselines()
     }
 
     private func applySearch() {
@@ -359,6 +360,22 @@ final class WorkspaceModel {
             content: content,
             hash: hash
         )
+    }
+
+    /// 进目录后台预录既存 eligible 文本文件基线（字节预算兜底大目录，不阻塞 UI）。
+    private func preRecordBaselines() {
+        guard let store = versionStore else { return }
+        let dir = currentURL.path(percentEncoded: false)
+        let urls = allItems.filter { !$0.isDirectory }.map(\.url)
+        DispatchQueue.global(qos: .background).async {
+            let result = VersionStore.recordBaselines(
+                store, urls: urls, directory: dir, byteBudget: 16 * 1024 * 1024
+            )
+            if result.truncated {
+                NSLog("[PathDeck] baseline preRecord truncated in %@: recorded=%d skipped=%d (16MB budget)",
+                      dir, result.recorded, result.skipped)
+            }
+        }
     }
 }
 

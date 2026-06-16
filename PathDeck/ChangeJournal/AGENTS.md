@@ -12,9 +12,9 @@
 |---|---|
 | `ChangeEvent.swift` | 变化事件值类型 model（`Sendable`，不依赖 GRDB）+ `ChangeTimeGroup` 枚举 + `grouped()` 时间分组纯函数 + `terminalSessionID` 归因字段 |
 | `ChangeStore.swift` | GRDB 封装：WAL 模式 SQLite（`changes.db`）初始化、schema migration（v1+v2）、批量写入（per-event 终端归因）、按目录查询 |
-| `VersionStore.swift` | GRDB 封装：独立 SQLite（`versions.db`）文件版本快照存储、hash 去重、per-file 上限清理、eligibility 判定、content blob 读取。大小阈值 / 保留条数 / 启用开关从 `@AppStorage` 动态读取 |
+| `VersionStore.swift` | GRDB 封装：独立 SQLite（`versions.db`）文件版本快照存储、hash 去重、per-file 上限清理、eligibility 判定、content blob 读取、进目录 baseline 预录（`recordBaselines`）、diff 基线三态选择（`selectBaseline`）。大小阈值 / 保留条数 / 启用开关从 `@AppStorage` 动态读取。文件 restore 操作见同文件 `enum FileRestore` |
 | `DiffEngine.swift` | Myers diff 算法：逐行 LCS 对比，产出 `[DiffLine]`（added/deleted/unchanged + 行号） |
-| `DiffView.swift` | SwiftUI inline diff 视图 + 恢复上一版确认流程（恢复前自动快照保证可撤销）|
+| `DiffView.swift` | SwiftUI inline diff 视图 + 恢复上一版确认流程（恢复前自动快照保证可撤销）+ 外部脏三态区分（磁盘 ≠ 任何快照时用 latest 当 before + 文案提示）|
 | `FSWatcher.swift` | FSEvents 封装（`nonisolated`，后台 DispatchQueue）：监听指定目录、事件 flag 分类、跨批次时间窗口聚合（0.5s debounce + `mergeType` 合并）、入队时刻捕获终端活跃快照（coalesce 不覆盖）、回调通知 |
 | `ChangeListView.swift` | SwiftUI 变化列表视图：类型过滤 + 时间分组 + 行点击定位 + `IgnoreRulesPopover`（internal 可见性，Settings 复用）+ 终端归因图标 + 版本快照图标（可点击触发 diff） |
 | `IgnoreRules.swift` | 忽略规则工具：默认模式 + 用户自定义 glob（UserDefaults）+ `fnmatch` 匹配 |
@@ -38,6 +38,7 @@
 
 ## 变更日志
 
+- 2026-06-16 S21 版本 baseline 预录 + restore 纯函数化：`VersionStore` 加 `@unchecked Sendable` + 静态 `recordBaselines`（进目录对从未快照的 eligible 文本文件预录基线，16MB/目录字节预算兜底）+ `selectBaseline`（diff 三态选择纯函数）+ `enum FileRestore`（restore 文件操作脱离 SwiftUI）。`WorkspaceModel.reload` 末尾后台（QoS background）`preRecordBaselines`（用 `allItems`，不阻塞 UI），修复「进目录对既存文件不录 baseline、首次外部修改拿不到真 before」。`DiffView` 引入 `isExternallyDirty`：磁盘内容不匹配任何快照时用 latest 当 before 并提示「当前未保存的改动会先被快照」，消除「恢复上一版」误导；无基线时提示「当前内容尚未建立版本基线」；`performRestore` 改调 `FileRestore.restore`。171 个单测通过（+6：recordBaselines ×3 + FileRestore ×2 + selectBaseline ×1）。
 - 2026-06-16 S20 变化归因纯函数化 + cwd 匹配：新增 `TerminalAttribution.swift`（`attribute(eventPath:snapshots:)` 纯函数 + `TerminalActivitySnapshot` 值类型）——归因从「贴当前选中 tab」改为「事件路径 ↔ session cwd 前缀匹配」，最深 cwd 优先、同深度取最近活跃，cwd 缺失/不匹配返回 nil（PRD §R2 不做虚假精确归因）。`FSWatcher` 在事件入队时刻（首次见 path）经 `snapshotProvider` 捕获终端活跃快照、coalesce 不覆盖（消除 flush 时刻读的跨 tab 切换污染），随 batch 带出。`ChangeStore.recordBatch` 从整批单一 `terminalSessionID` 改为 per-event 第四字段（同批不同文件可属不同终端）。165 个单测通过（+9：TerminalAttributionTests ×8 + recordBatchPerEventSessionID）。
 - 2026-06-15 S16 `VersionStore` 配置化：`maxFileSize` / `maxVersionsPerFile` / `isEnabled` 从 `UserDefaults` 动态读取（Settings 窗口对应 `versionMaxSizeKB` / `versionMaxCount` / `versionsEnabled`）。`IgnoreRulesPopover` 从 `private` 改为 `internal`（Settings 窗口复用）。
 - 2026-06-15 S15 Diff View + Restore + FSWatcher 聚合重写：新增 `DiffEngine`（Myers diff）+ `DiffView`（inline diff + restore，`.task(id: path)` 响应路径切换，restore 前快照失败中止）；`VersionStore` 扩展 `versionContent` / `latestVersionWithContent` / `previousVersionWithContent`（跳过与当前内容相同 hash 的版本）；`ChangeListView` 行导航与版本图标拆为独立点击区域；`FSWatcher` 从单批次 `seen` 去重重写为跨批次时间窗口聚合（`pending` 字典 + 0.5s debounce + `mergeType` 6 种组合）+ `classify` 修正 `renamed+exists → modified`；`IgnoreRules` 新增 `*.sb-*` / `._*` / `*.tmp` 默认规则；`WorkspaceModel` 移除 `recentEventKeys` 补丁式去重。106 个单测通过（+16）。

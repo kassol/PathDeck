@@ -12,7 +12,7 @@ struct FileVersion: Identifiable, Sendable {
     let createdAt: Date
 }
 
-final class VersionStore {
+final class VersionStore: @unchecked Sendable {
     static let defaultMaxVersionsPerFile = 10
     static let defaultMaxFileSizeKB = 1024
 
@@ -201,6 +201,45 @@ final class VersionStore {
         return contentType.conforms(to: .text) && fileSize <= maxFileSize
     }
 
+    /// 进目录时对从未快照过的 eligible 文本文件预录基线，建立真正的「修改前」。
+    /// 累计内容字节 ≤ byteBudget；超预算停止并置 truncated。可在后台线程跑。
+    static func recordBaselines(
+        _ store: VersionStore,
+        urls: [URL],
+        directory: String,
+        byteBudget: Int
+    ) -> (recorded: Int, skipped: Int, truncated: Bool) {
+        var used = 0, recorded = 0, skipped = 0
+        var truncated = false
+        for url in urls {
+            guard Self.isEligible(url: url) else { skipped += 1; continue }
+            let path = url.path(percentEncoded: false)
+            // 只录从未快照过的文件——避免用「进目录时的当前态」覆盖更早的真基线。
+            let alreadyHasVersion = ((try? store.latestVersion(for: path)) ?? nil) != nil
+            if alreadyHasVersion { skipped += 1; continue }
+            guard let content = try? Data(contentsOf: url) else { skipped += 1; continue }
+            if used + content.count > byteBudget { truncated = true; break }
+            used += content.count
+            try? store.saveVersion(path: path, directory: directory, content: content, hash: content.sha256Hex)
+            recorded += 1
+        }
+        return (recorded, skipped, truncated)
+    }
+
+    /// 选择 diff 的「修改前」基线版本（纯函数，可单测）。
+    /// latest 存在且 hash≠当前（磁盘=外部脏，未被快照）→ 用 latest 当 before，标记外部脏；
+    /// 否则（磁盘=最新快照）→ 用 previous（跳过当前 hash 的上一版）。
+    static func selectBaseline(
+        latest: (FileVersion, Data)?,
+        previous: (FileVersion, Data)?,
+        currentHash: String
+    ) -> (baseline: (FileVersion, Data)?, isExternallyDirty: Bool) {
+        if let latest, latest.0.contentHash != currentHash {
+            return (latest, true)
+        }
+        return (previous, false)
+    }
+
     private static func fileVersion(from row: Row) -> FileVersion? {
         guard let id: Int64 = row["id"],
               let path: String = row["path"],
@@ -219,5 +258,29 @@ final class VersionStore {
 extension Data {
     var sha256Hex: String {
         SHA256.hash(data: self).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// 把文件恢复到某历史快照内容的纯文件操作（脱离 SwiftUI，端到端可测）。
+enum FileRestore {
+    /// 先把当前磁盘内容存为新快照（保证可撤销），再原子替换为 snapshotContent。
+    static func restore(store: VersionStore, path: String, snapshotContent: Data) throws {
+        let url = URL(fileURLWithPath: path)
+        let fileName = (path as NSString).lastPathComponent
+        let currentData = try Data(contentsOf: url)
+        try store.saveVersion(
+            path: path,
+            directory: (path as NSString).deletingLastPathComponent,
+            content: currentData,
+            hash: currentData.sha256Hex
+        )
+        let tempURL = url.deletingLastPathComponent().appendingPathComponent(".\(fileName).pathdeck-restore")
+        do {
+            try snapshotContent.write(to: tempURL, options: .atomic)
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
+        }
     }
 }

@@ -12,6 +12,7 @@ struct DiffView: View {
     @State private var errorMessage: String?
     @State private var showRestoreConfirm = false
     @State private var restoreError: String?
+    @State private var isExternallyDirty = false
 
     private var fileName: String {
         (path as NSString).lastPathComponent
@@ -42,7 +43,7 @@ struct DiffView: View {
             Button("恢复") { performRestore() }
         } message: {
             if let version = snapshotVersion {
-                Text("将 \(fileName) 恢复到 \(version.createdAt.formatted(date: .abbreviated, time: .shortened)) 的版本？")
+                Text(restoreMessage(for: version))
             }
         }
         .alert("恢复失败", isPresented: .init(
@@ -111,6 +112,7 @@ struct DiffView: View {
         snapshotVersion = nil
         snapshotContent = nil
         errorMessage = nil
+        isExternallyDirty = false
 
         guard FileManager.default.fileExists(atPath: path),
               let currentData = try? Data(contentsOf: URL(fileURLWithPath: path)),
@@ -120,16 +122,13 @@ struct DiffView: View {
         }
 
         let currentHash = currentData.sha256Hex
-        let result: (FileVersion, Data)?
-        if let latest = try? versionStore.latestVersionWithContent(for: path),
-           latest.0.contentHash != currentHash {
-            result = latest
-        } else {
-            result = try? versionStore.previousVersionWithContent(for: path, excludingHash: currentHash)
-        }
+        let latest = try? versionStore.latestVersionWithContent(for: path)
+        let previous = try? versionStore.previousVersionWithContent(for: path, excludingHash: currentHash)
+        let selection = VersionStore.selectBaseline(latest: latest, previous: previous, currentHash: currentHash)
+        isExternallyDirty = selection.isExternallyDirty
 
-        guard let (version, oldData) = result else {
-            errorMessage = "无可用版本快照"
+        guard let (version, oldData) = selection.baseline else {
+            errorMessage = "当前内容尚未建立版本基线"
             return
         }
         snapshotVersion = version
@@ -145,27 +144,20 @@ struct DiffView: View {
         }
     }
 
+    private func restoreMessage(for version: FileVersion) -> String {
+        let base = "将 \(fileName) 恢复到 \(version.createdAt.formatted(date: .abbreviated, time: .shortened)) 的版本？"
+        if isExternallyDirty {
+            return base + "\n当前未保存的改动会先被快照，可随后恢复。"
+        }
+        return base
+    }
+
     private func performRestore() {
         guard let snapshotContent else { return }
-
-        let url = URL(fileURLWithPath: path)
         do {
-            let currentData = try Data(contentsOf: url)
-            let hash = currentData.sha256Hex
-            let dir = (path as NSString).deletingLastPathComponent
-            try versionStore.saveVersion(path: path, directory: dir, content: currentData, hash: hash)
-        } catch {
-            restoreError = "无法保存当前版本快照：\(error.localizedDescription)"
-            return
-        }
-
-        let tempURL = url.deletingLastPathComponent().appendingPathComponent(".\(fileName).pathdeck-restore")
-        do {
-            try snapshotContent.write(to: tempURL, options: .atomic)
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+            try FileRestore.restore(store: versionStore, path: path, snapshotContent: snapshotContent)
             onRestored?()
         } catch {
-            try? FileManager.default.removeItem(at: tempURL)
             restoreError = error.localizedDescription
         }
     }
