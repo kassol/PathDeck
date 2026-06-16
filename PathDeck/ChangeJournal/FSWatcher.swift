@@ -83,7 +83,8 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         stop()
     }
 
-    fileprivate func handleRawEvents(paths: [String], flags: [FSEventStreamEventFlags]) {
+    /// internal（非 fileprivate）以便单测直接注入 raw 事件验证归属目录，不依赖真实 FSEventStream 异步回调。
+    func handleRawEvents(paths: [String], flags: [FSEventStreamEventFlags]) {
         guard let watchedDir = watchedDirectory else { return }
 
         for (path, flag) in zip(paths, flags) {
