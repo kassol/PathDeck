@@ -10,13 +10,14 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 ## 目录结构
 
 - `TerminalEngine.swift` — 协议定义：多 session API（`createSession(cwd:) -> UUID` / `closeSession` / `terminalView(for:)` / `writeText(_:to:)` / `onCwdChange`），业务层唯一依赖
-- `GhosttyTerminalEngine.swift` — 协议实现：管理多个 `GhosttySurfaceView` 实例（`[UUID: GhosttySurfaceView]` 字典），延迟创建 surface，关闭时释放；`pendingTexts` buffer 解决 surface 未就绪时 `writeText` 丢失（`onSurfaceReady` flush，5 秒超时保护）；通过 `GhosttyApp.registerPwdHandler` 订阅 cwd 变化
+- `GhosttyTerminalEngine.swift` — 协议实现：管理多个 `GhosttySurfaceView` 实例（`[UUID: GhosttySurfaceView]` 字典），延迟创建 surface，关闭时释放；`pendingBuffers`（`PendingTextBuffer`，条数/字节上限）解决 surface 未就绪时 `writeText` 丢失，`onSurfaceReady` flush、超时 token 化可取消、surface 创建失败经 `onSurfaceFailed` 立即丢弃并 `onPendingDropped` 上报；`handleSurfaceClose` 经 `exitedSessionIDs` 遍历全部已退出 surface；通过 `GhosttyApp.registerPwdHandler` 订阅 cwd 变化
+- `PendingTextBuffer.swift` — `writeText` pending 缓冲纯值类型：FIFO + 条数 64 / 字节 256KB 上限（超限丢队头最旧、单条超限仍接受）+ `SurfaceFailureReason` / `PendingDropReason` 枚举
 - `TerminalSession.swift` — 会话值类型（id, title, cwd, currentCwd）+ `TerminalTabState`（Codable，用于跨重启 tab 恢复），SwiftUI 可 ForEach
 - `ShellIntegration.swift` — zsh/bash shell integration：ZDOTDIR 注入 OSC 7 precmd/chpwd hook（zsh），PROMPT_COMMAND 注入（bash）
 - `TerminalTabBar.swift` — 多 Tab 栏 SwiftUI 视图：tab 切换 / 新建（+按钮）/ 关闭（×按钮）/ 双击重命名
 - `TerminalPanelView.swift` — `NSViewRepresentable` 多 session 容器：container NSView + `isHidden` 切换活跃 surface + 焦点跟随
-- `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + runtime callbacks + `wakeup`→合并主队列 `app_tick` + `action_cb` 处理 `GHOSTTY_ACTION_PWD`/`SET_TITLE`（多 handler 注册）
-- `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置 + `onSurfaceReady` 回调（`createSurface` 成功后触发）+ 读取 Settings（shell/font size）+ shell integration env vars 注入
+- `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + runtime callbacks + `wakeup`→合并主队列 `app_tick` + `action_cb` 处理 `GHOSTTY_ACTION_PWD`/`SET_TITLE`（多 handler 注册）/`SHOW_CHILD_EXITED`（子进程退出 → post `ghosttySurfaceDidClose` 关 tab + `return true` 抑制 "press any key" overlay）
+- `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置 + `onSurfaceReady` 回调（`createSurface` 成功后触发）+ `onSurfaceFailed` 回调（app 未初始化 / `ghostty_surface_new` 返回 nil 时触发，供 engine 立即丢弃 pending）+ 读取 Settings（shell/font size）+ shell integration env vars 注入
 - `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载（S2 遗留，保留作调试入口）
 
 入口：主窗口底部 Terminal Panel（⌃\` 或 Toolbar 按钮切换），支持多 tab；独立冒烟窗口（⌃⌥⌘T）。
