@@ -112,6 +112,13 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
                 }
             }
             return true
+        case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
+            // 子进程（shell）退出：Ghostty embedder 模型把退出决策委托给宿主。
+            // 关闭对应 tab，并 return true 表示已处理——否则 Ghostty 显示默认
+            // "press any key" overlay（exit 后不自动关闭 tab）。退出 surface 经
+            // process_exited 反查（见 GhosttyTerminalEngine.handleSurfaceClose）。
+            NotificationCenter.default.post(name: .ghosttySurfaceDidClose, object: nil)
+            return true
         default:
             return false
         }
