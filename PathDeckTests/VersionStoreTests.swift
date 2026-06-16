@@ -242,6 +242,23 @@ struct VersionStoreTests {
     }
 
     @Test
+    func fileRestoreDoesNotClobberExistingSidecar() throws {
+        let (store, tmpDir) = try makeTempStore()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("t.txt")
+        try "current".write(to: file, atomically: true, encoding: .utf8)
+        // 用户目录里本来就有一个与旧固定临时名同名的文件——不应被恢复流程破坏。
+        let sidecar = tmpDir.appendingPathComponent(".t.txt.pathdeck-restore")
+        try "precious".write(to: sidecar, atomically: true, encoding: .utf8)
+
+        try FileRestore.restore(store: store, path: file.path(percentEncoded: false), snapshotContent: Data("snapshot".utf8))
+
+        #expect(try Data(contentsOf: file) == Data("snapshot".utf8))
+        #expect(try String(contentsOf: sidecar, encoding: .utf8) == "precious")
+    }
+
+    @Test
     func fileRestoreThrowsForMissingFile() throws {
         let (store, tmpDir) = try makeTempStore()
         defer { try? FileManager.default.removeItem(at: tmpDir) }

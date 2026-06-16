@@ -266,7 +266,6 @@ enum FileRestore {
     /// 先把当前磁盘内容存为新快照（保证可撤销），再原子替换为 snapshotContent。
     static func restore(store: VersionStore, path: String, snapshotContent: Data) throws {
         let url = URL(fileURLWithPath: path)
-        let fileName = (path as NSString).lastPathComponent
         let currentData = try Data(contentsOf: url)
         try store.saveVersion(
             path: path,
@@ -274,13 +273,16 @@ enum FileRestore {
             content: currentData,
             hash: currentData.sha256Hex
         )
-        let tempURL = url.deletingLastPathComponent().appendingPathComponent(".\(fileName).pathdeck-restore")
-        do {
-            try snapshotContent.write(to: tempURL, options: .atomic)
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
-        } catch {
-            try? FileManager.default.removeItem(at: tempURL)
-            throw error
-        }
+        // 写到系统临时替换目录（同卷、唯一），避免在用户目录用固定文件名覆盖既有文件。
+        let tempDir = try FileManager.default.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: url,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let tempURL = tempDir.appendingPathComponent(url.lastPathComponent)
+        try snapshotContent.write(to: tempURL, options: .atomic)
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
     }
 }

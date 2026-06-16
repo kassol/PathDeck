@@ -25,7 +25,7 @@
 - GRDB 依赖隔离在 `ChangeStore` / `VersionStore` 内，`ChangeEvent` / `FileVersion` 不引用任何 GRDB 类型。
 - SQLite 模式：`journal_mode = WAL` + `synchronous = NORMAL` + `busy_timeout = 5s` + `auto_vacuum = INCREMENTAL`。进程 crash 不丢不坏；仅极端 OS crash 可能丢最后一个 WAL frame（对 change journal 可接受）。
 - 数据库路径：`~/Library/Application Support/in.riverflows.PathDeck/changes.db`（事件）、`versions.db`（版本快照，独立数据库，含大 blob）。
-- FSWatcher 是 `nonisolated final class: @unchecked Sendable`，C 回调在后台 DispatchQueue 触发。事件先累积到 `pending` 字典（按路径合并类型）+ 首次见到该 path 时经 `snapshotProvider` 捕获终端活跃快照存入 `pendingSnapshots`，静默 0.5 秒后统一 flush 给 handler（含 per-path 快照）。调用方（`WorkspaceModel`）dispatch 到主队列后写入 ChangeStore + 刷新 UI。
+- FSWatcher 是 `nonisolated final class: @unchecked Sendable`，C 回调在后台 DispatchQueue 触发。事件先累积到 `pending` 字典（按路径合并类型）+ 首次见到该 path 时经 `snapshotProvider` 捕获终端活跃快照存入 `pendingSnapshots`，静默 0.5 秒后统一 flush 给 handler（含 per-path 快照 + origin directory）。事件携带 origin directory（`watchedDirectory`），导航瞬间 flush 的旧目录 pending 归属旧目录、不误写新目录的 journal；`pending`/`pendingSnapshots`/`watchedDirectory`/`flushWork` 全部收敛到 watcher queue 串行访问（含 `stop()` 经 `queue.sync`）。调用方（`WorkspaceModel`）dispatch 到主队列后写入 ChangeStore + 刷新 UI。
 - 事件类型合并（`mergeType`）：`added→modified=added`、`modified→added=modified`（safe-save）、`deleted→added=modified`（replace）、其余保持 existing。
 - 事件分类（`classify`）用 FSEvents flag 组合 + `FileManager.fileExists` ground truth 兜底：`renamed+exists → modified`（macOS atomic save）；`renamed+created+exists → added`（新文件 rename 到位）。文件和目录事件均处理。
 - Schema migration 由 GRDB `DatabaseMigrator` 管理，版本化、幂等。

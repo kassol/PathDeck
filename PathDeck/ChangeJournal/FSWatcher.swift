@@ -4,7 +4,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private var watchedDirectory: String?
     private let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
-    private let handler: @Sendable ([(path: String, type: ChangeEventType, snapshots: [TerminalActivitySnapshot])]) -> Void
+    private let handler: @Sendable ([(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])]) -> Void
     private let snapshotProvider: @Sendable () -> [TerminalActivitySnapshot]
 
     private var pending: [String: ChangeEventType] = [:]
@@ -14,7 +14,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
 
     init(
         snapshotProvider: @escaping @Sendable () -> [TerminalActivitySnapshot] = { [] },
-        handler: @escaping @Sendable ([(path: String, type: ChangeEventType, snapshots: [TerminalActivitySnapshot])]) -> Void
+        handler: @escaping @Sendable ([(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])]) -> Void
     ) {
         self.snapshotProvider = snapshotProvider
         self.handler = handler
@@ -27,7 +27,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         if dirPath.hasSuffix("/") && dirPath.count > 1 {
             dirPath = String(dirPath.dropLast())
         }
-        watchedDirectory = dirPath
+        queue.sync { watchedDirectory = dirPath }
 
         var context = FSEventStreamContext(
             version: 0,
@@ -63,16 +63,18 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         self.stream = nil
-        watchedDirectory = nil
-        // 在 watcher queue 上清理 pending，与在途 handleRawEvents/flush 串行，
-        // 避免主线程（navigate→stop）与后台回调并发 mutate 同一字典（UB）。
+        // 在 watcher queue 上清理 pending + watchedDirectory，与在途 handleRawEvents/flush 串行，
+        // 避免主线程（navigate→stop）与后台回调并发 mutate 共享状态（UB）。
+        // batch 用清空前的 watchedDirectory 填 directory：pending 事件归属旧目录，
+        // 而非导航后已切换的新目录（否则旧目录变化会写进新目录的 journal）。
         queue.sync {
+            let dir = watchedDirectory
+            watchedDirectory = nil
             flushWork?.cancel()
             flushWork = nil
-            guard !pending.isEmpty else { return }
-            let batch = pending.map { (path: $0.key, type: $0.value, snapshots: pendingSnapshots[$0.key] ?? []) }
-            pending.removeAll()
-            pendingSnapshots.removeAll()
+            defer { pending.removeAll(); pendingSnapshots.removeAll() }
+            guard !pending.isEmpty, let dir else { return }
+            let batch = pending.map { (path: $0.key, type: $0.value, directory: dir, snapshots: pendingSnapshots[$0.key] ?? []) }
             handler(batch)
         }
     }
@@ -113,8 +115,8 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     }
 
     private func flush() {
-        guard !pending.isEmpty else { return }
-        let batch = pending.map { (path: $0.key, type: $0.value, snapshots: pendingSnapshots[$0.key] ?? []) }
+        guard !pending.isEmpty, let dir = watchedDirectory else { return }
+        let batch = pending.map { (path: $0.key, type: $0.value, directory: dir, snapshots: pendingSnapshots[$0.key] ?? []) }
         pending.removeAll()
         pendingSnapshots.removeAll()
         handler(batch)

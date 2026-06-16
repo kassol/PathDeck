@@ -315,7 +315,7 @@ final class WorkspaceModel {
         return terminalSnapshots
     }
 
-    private func handleFSEvents(_ events: [(path: String, type: ChangeEventType, snapshots: [TerminalActivitySnapshot])]) {
+    private func handleFSEvents(_ events: [(path: String, type: ChangeEventType, directory: String, snapshots: [TerminalActivitySnapshot])]) {
         let accepted = events.filter { event in
             let fileName = URL(fileURLWithPath: event.path).lastPathComponent
             return !IgnoreRules.shouldIgnore(fileName: fileName)
@@ -324,17 +324,18 @@ final class WorkspaceModel {
         let changesEnabled = defaults.object(forKey: "changesEnabled") == nil
             ? true : defaults.bool(forKey: "changesEnabled")
 
-        let dir = currentURL.path(percentEncoded: false)
+        // 用事件自带的 directory（来自 FSWatcher 的 watchedDirectory），不回读 currentURL——
+        // 导航瞬间 flush 的旧目录 pending 必须归属旧目录，而非导航后已切换的新目录。
         if changesEnabled {
             let batch = accepted.map { event -> (path: String, type: ChangeEventType, directory: String, terminalSessionID: UUID?) in
                 let sessionID = TerminalAttribution.attribute(eventPath: event.path, snapshots: event.snapshots)
-                return (path: event.path, type: event.type, directory: dir, terminalSessionID: sessionID)
+                return (path: event.path, type: event.type, directory: event.directory, terminalSessionID: sessionID)
             }
             try? changeStore?.recordBatch(batch)
         }
 
         for event in accepted where event.type == .added || event.type == .modified {
-            snapshotIfEligible(path: event.path)
+            snapshotIfEligible(path: event.path, directory: event.directory)
         }
 
         for event in accepted {
@@ -352,14 +353,14 @@ final class WorkspaceModel {
         reload()
     }
 
-    private func snapshotIfEligible(path: String) {
+    private func snapshotIfEligible(path: String, directory: String) {
         let url = URL(fileURLWithPath: path)
         guard VersionStore.isEligible(url: url),
               let content = try? Data(contentsOf: url) else { return }
         let hash = content.sha256Hex
         try? versionStore?.saveVersion(
             path: path,
-            directory: currentURL.path(percentEncoded: false),
+            directory: directory,
             content: content,
             hash: hash
         )
@@ -380,7 +381,14 @@ final class WorkspaceModel {
                 NSLog("[PathDeck] baseline preRecord truncated in %@: recorded=%d skipped=%d (16MB budget)",
                       dir, result.recorded, result.skipped)
             }
-            DispatchQueue.main.async { self?.isPreRecordingBaselines = false }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isPreRecordingBaselines = false
+                // 扫描期间已导航到别的目录 → 补扫，避免漏录新目录基线。
+                if self.currentURL.path(percentEncoded: false) != dir {
+                    self.preRecordBaselines()
+                }
+            }
         }
     }
 }
