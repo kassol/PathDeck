@@ -50,7 +50,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ```
 PathDeck/                  App 源码
-PathDeck/PathDeckApp.swift @main + AppDelegate（URL/Open With 入口 application(_:open:) + Services 注册）
+PathDeck/PathDeckApp.swift @main（Window scene 单窗口，防 WindowGroup 重复开窗）+ AppDelegate（kAEGetURL 拦截 URL Scheme + application(_:open:) Open With + Services 注册）
 PathDeck/ContentView.swift NavigationSplitView 主布局 + 底部面板 tab 切换 + Preview Pane + 终端/变化协调 + 消费 AppRouter
 PathDeck/SidebarView.swift Sidebar（Favorites + Pinned）+ PinnedFolders bookmark 持久化
 PathDeck/AppRouter.swift   外部入口（URL Scheme/Services/Open With）归一中介，@Observable 一次性令牌

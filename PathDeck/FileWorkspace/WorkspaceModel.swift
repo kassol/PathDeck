@@ -157,9 +157,8 @@ final class WorkspaceModel {
     func reveal(_ fileURLs: [URL]) {
         guard let first = fileURLs.first else { return }
         navigate(to: first.deletingLastPathComponent())
-        let targets = fileURLs
-            .filter { $0.deletingLastPathComponent().standardizedFileURL == currentURL }
-            .map { currentURL.appendingPathComponent($0.lastPathComponent) }
+        let names = Set(fileURLs.map(\.lastPathComponent))
+        let targets = items.filter { names.contains($0.name) }.map(\.url)
         selectedURLs = targets
         revealSelection = targets
     }

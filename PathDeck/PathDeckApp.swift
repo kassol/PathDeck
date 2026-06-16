@@ -12,7 +12,7 @@ struct PathDeckApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("PathDeck", id: "main") {
             ContentView()
         }
         .commands {
@@ -34,29 +34,44 @@ struct PathDeckApp: App {
     }
 }
 
-/// App 委托：统一 URL Scheme 与 Open With 的入口（`application(_:open:)`），并注册 Finder Services。
-///
-/// URL 一律走 `application(_:open:)`，不挂 `.onOpenURL`——规避 `WindowGroup` 复制窗口 quirk 与双触发。
-/// 所有入口经 `AppRouter` 投递路由，由 `ContentView` 消费。`LSMultipleInstancesProhibited` 保证唤起复用本进程。
+/// App 委托：URL Scheme 在 Apple Event 层拦截（Window scene 不触发 .onOpenURL），
+/// Open With 走 `application(_:open:)`，Finder Services 走 `ServicesProvider`。
+/// 所有入口经 `AppRouter` 投递路由，由 `ContentView` 消费。
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let servicesProvider = ServicesProvider()
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Window scene 不触发 .onOpenURL，需在 Apple Event 层拦截 kAEGetURL。
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = servicesProvider
     }
 
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor,
+                                     withReply reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: urlString),
+              let route = URLSchemeHandler.route(for: url) else { return }
+        AppRouter.shared.request(route)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Open With（CFBundleDocumentTypes）投递的文件夹 file URL。
+    /// URL Scheme 已由 `handleGetURL` 在 Apple Event 层处理，不会到达此方法。
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            if url.isFileURL {
-                // CFBundleDocumentTypes「打开方式」投递的文件夹 file URL → .open
-                var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(
-                    atPath: url.path(percentEncoded: false), isDirectory: &isDir
-                ), isDir.boolValue else { continue }
-                AppRouter.shared.request(.open(url.standardizedFileURL))
-            } else if let route = URLSchemeHandler.route(for: url) {
-                AppRouter.shared.request(route)
-            }
+        for url in urls where url.isFileURL {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(
+                atPath: url.path(percentEncoded: false), isDirectory: &isDir
+            ), isDir.boolValue else { continue }
+            AppRouter.shared.request(.open(url.standardizedFileURL))
         }
     }
 }

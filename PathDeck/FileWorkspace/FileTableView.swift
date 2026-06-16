@@ -111,10 +111,10 @@ struct FileTableView: NSViewRepresentable {
                 })
                 if !rows.isEmpty {
                     tv.selectRowIndexes(rows, byExtendingSelection: false)
-                    // 滚动锚定 targets 首项（非 IndexSet 最小行）
                     if let firstRow = itemsSnapshot.firstIndex(where: { $0.url == targets[0] }) {
                         tv.scrollRowToVisible(firstRow)
                     }
+                    tv.window?.makeFirstResponder(tv)
                 }
                 clearReveal()
             }

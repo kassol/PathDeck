@@ -292,22 +292,25 @@ struct ContentView: View {
 
     /// 消费 `AppRouter` 的一次性令牌，把外部入口归一为 model 导航。
     /// onAppear 与 `router.pending` 变化各调一次，覆盖冷启动唤起与运行时唤起两种时序，consume 幂等。
+    /// 消费同步（防双重处理），处理异步（脱离 SwiftUI view update cycle，否则 NSAlert.runModal
+    /// 在 onChange 内开嵌套 run loop 会阻塞 UI，revealSelection 的状态传播也会与 updateNSView 竞争）。
     private func handleExternalRoute() {
         guard let route = router.consume() else { return }
-        switch route {
-        case .open(let url):
-            model.navigate(to: url)
-            RecentFolders.shared.add(url)
-        case .reveal(let urls):
-            model.reveal(urls)
-        case .terminal(let url, let requireConfirmation):
-            // 外部不可信入口（URL Scheme）开 shell 前须用户确认（PRD 1214）
-            if requireConfirmation, !confirmOpenTerminal(at: url) { return }
-            model.navigate(to: url)
-            RecentFolders.shared.add(url)
-            activeBottomTab = .terminal
-            createTerminalTab()  // cwd = model.currentURL（navigate 已同步设为 url）
-            if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
+        DispatchQueue.main.async {
+            switch route {
+            case .open(let url):
+                model.navigate(to: url)
+                RecentFolders.shared.add(url)
+            case .reveal(let urls):
+                model.reveal(urls)
+            case .terminal(let url, let requireConfirmation):
+                if requireConfirmation, !confirmOpenTerminal(at: url) { return }
+                model.navigate(to: url)
+                RecentFolders.shared.add(url)
+                activeBottomTab = .terminal
+                createTerminalTab()
+                if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
+            }
         }
     }
 
