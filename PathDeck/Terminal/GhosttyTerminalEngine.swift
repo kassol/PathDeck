@@ -4,11 +4,14 @@ import GhosttyKit
 final class GhosttyTerminalEngine: TerminalEngine {
     var onSessionClose: ((UUID) -> Void)?
     var onCwdChange: ((UUID, URL) -> Void)?
+    var onPendingDropped: ((UUID, Int, PendingDropReason) -> Void)?
 
     private let engineID = ObjectIdentifier(UUID.self as Any.Type)
     private var surfaceViews: [UUID: GhosttySurfaceView] = [:]
     private var sessionCwds: [UUID: URL] = [:]
-    private var pendingTexts: [UUID: [String]] = [:]
+    /// internal（非 private）以便 @testable 断言 pending 状态（S19 测试缝）。
+    var pendingBuffers: [UUID: PendingTextBuffer] = [:]
+    var pendingTimeoutTokens: [UUID: UUID] = [:]
     private var observer: NSObjectProtocol?
     private let registrationID: ObjectIdentifier
 
@@ -41,7 +44,8 @@ final class GhosttyTerminalEngine: TerminalEngine {
     func closeSession(_ id: UUID) {
         surfaceViews.removeValue(forKey: id)
         sessionCwds.removeValue(forKey: id)
-        pendingTexts.removeValue(forKey: id)
+        pendingBuffers.removeValue(forKey: id)
+        cancelPendingTimeout(id)
     }
 
     func terminalView(for id: UUID) -> NSView {
@@ -51,6 +55,9 @@ final class GhosttyTerminalEngine: TerminalEngine {
         view.onSurfaceReady = { [weak self] in
             self?.flushPendingTexts(for: id)
         }
+        view.onSurfaceFailed = { [weak self] reason in
+            self?.handleSurfaceCreationFailure(id: id, reason: reason)
+        }
         surfaceViews[id] = view
         return view
     }
@@ -59,34 +66,65 @@ final class GhosttyTerminalEngine: TerminalEngine {
         if let view = surfaceViews[id], view.surface != nil {
             view.insertText(text)
         } else {
-            pendingTexts[id, default: []].append(text)
+            let result = pendingBuffers[id, default: PendingTextBuffer()].enqueue(text)
+            if !result.droppedFromOverflow.isEmpty {
+                onPendingDropped?(id, result.droppedFromOverflow.count, .overflow)
+            }
             schedulePendingTimeout(for: id)
         }
     }
 
     private func flushPendingTexts(for id: UUID) {
-        guard let texts = pendingTexts.removeValue(forKey: id),
+        cancelPendingTimeout(id)
+        guard var buffer = pendingBuffers.removeValue(forKey: id),
               let view = surfaceViews[id] else { return }
-        for text in texts {
+        for text in buffer.drain() {
             view.insertText(text)
         }
     }
 
-    private func schedulePendingTimeout(for id: UUID) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self, let texts = self.pendingTexts.removeValue(forKey: id) else { return }
-            NSLog("[PathDeck] writeText timeout: dropped %d pending text(s) for session %@", texts.count, id.uuidString)
+    /// surface 创建失败：立即显式丢弃 pending 并上报，不再等盲目超时。
+    private func handleSurfaceCreationFailure(id: UUID, reason: SurfaceFailureReason) {
+        cancelPendingTimeout(id)
+        guard var buffer = pendingBuffers.removeValue(forKey: id) else { return }
+        let dropped = buffer.drain()
+        if !dropped.isEmpty {
+            onPendingDropped?(id, dropped.count, .surfaceCreationFailed)
         }
     }
 
-    private func handleSurfaceClose() {
-        for (id, view) in surfaceViews {
-            guard let surface = view.surface else { continue }
-            if ghostty_surface_process_exited(surface) {
-                onSessionClose?(id)
-                return
+    private func schedulePendingTimeout(for id: UUID) {
+        let token = UUID()
+        pendingTimeoutTokens[id] = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.pendingTimeoutTokens[id] == token else { return }
+            self.pendingTimeoutTokens.removeValue(forKey: id)
+            guard var buffer = self.pendingBuffers.removeValue(forKey: id) else { return }
+            let dropped = buffer.drain()
+            if !dropped.isEmpty {
+                self.onPendingDropped?(id, dropped.count, .timeout)
             }
         }
+    }
+
+    private func cancelPendingTimeout(_ id: UUID) {
+        pendingTimeoutTokens.removeValue(forKey: id)
+    }
+
+    private func handleSurfaceClose() {
+        let states = surfaceViews.compactMap { id, view -> (id: UUID, exited: Bool)? in
+            guard let surface = view.surface else { return nil }
+            return (id, ghostty_surface_process_exited(surface))
+        }
+        // 先收集全部已退出 id 再回调：onSessionClose 会改 surfaceViews，避免遍历中改集合。
+        for id in Self.exitedSessionIDs(from: states) {
+            onSessionClose?(id)
+        }
+    }
+
+    /// 从 (id, 是否已退出) 快照挑出全部已退出 session（纯函数，脱离 libghostty 可单测）。
+    static func exitedSessionIDs(from states: [(id: UUID, exited: Bool)]) -> [UUID] {
+        states.filter { $0.exited }.map { $0.id }
     }
 
     private func handlePwdChange(surface: ghostty_surface_t, pwd: String) {

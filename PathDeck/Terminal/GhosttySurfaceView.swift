@@ -17,6 +17,7 @@ import Metal
 final class GhosttySurfaceView: NSView {
     var initialCwd: URL?
     var onSurfaceReady: (() -> Void)?
+    var onSurfaceFailed: ((SurfaceFailureReason) -> Void)?
     private(set) var surface: ghostty_surface_t?
 
     override init(frame frameRect: NSRect) {
@@ -98,6 +99,9 @@ final class GhosttySurfaceView: NSView {
     private func createSurface() {
         guard let app = GhosttyApp.shared.app else {
             NSLog("[PathDeck] surface 创建跳过：ghostty app 未初始化")
+            onSurfaceFailed?(.appNotInitialized)
+            onSurfaceFailed = nil
+            onSurfaceReady = nil
             return
         }
 
@@ -136,6 +140,9 @@ final class GhosttySurfaceView: NSView {
 
         guard let surface else {
             NSLog("[PathDeck] ghostty_surface_new 返回 nil")
+            onSurfaceFailed?(.surfaceNewReturnedNil)
+            onSurfaceFailed = nil
+            onSurfaceReady = nil
             return
         }
 
@@ -145,6 +152,7 @@ final class GhosttySurfaceView: NSView {
         ghostty_surface_refresh(surface)
         onSurfaceReady?()
         onSurfaceReady = nil
+        onSurfaceFailed = nil
     }
 
     /// 同步 display id / 内容缩放 / 像素尺寸到 surface。display id 让内部 CVDisplayLink 锁对刷新率。

@@ -134,6 +134,10 @@ struct ContentView: View {
                 saveTerminalTabState()
             }
         }
+        terminalEngine.onPendingDropped = { id, count, reason in
+            NSLog("[PathDeck] dropped %d pending text(s) for session %@: %@",
+                  count, id.uuidString, String(describing: reason))
+        }
     }
 
     // MARK: - Workspace Content

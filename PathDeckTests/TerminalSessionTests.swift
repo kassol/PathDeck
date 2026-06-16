@@ -91,6 +91,41 @@ struct TerminalSessionTests {
         engine.writeText("after close", to: id)
     }
 
+    @Test func exitedSessionIDsReturnsAllExited() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let result = GhosttyTerminalEngine.exitedSessionIDs(
+            from: [(id: a, exited: true), (id: b, exited: false), (id: c, exited: true)]
+        )
+        #expect(result == [a, c])
+    }
+
+    @Test func onPendingDroppedFiresOnOverflow() {
+        let engine = GhosttyTerminalEngine()
+        let id = engine.createSession(cwd: URL(fileURLWithPath: "/tmp"))
+        var reason: PendingDropReason?
+        var droppedCount = 0
+        engine.onPendingDropped = { _, count, r in
+            reason = r
+            droppedCount = count
+        }
+        for i in 0..<70 {
+            engine.writeText("text\(i)", to: id)
+        }
+        #expect(reason == .overflow)
+        #expect(droppedCount > 0)
+    }
+
+    @Test func closeSessionDropsPendingAndCancelsTimeout() {
+        let engine = GhosttyTerminalEngine()
+        let id = engine.createSession(cwd: URL(fileURLWithPath: "/tmp"))
+        engine.writeText("queued", to: id)
+        #expect(engine.pendingBuffers[id] != nil)
+        #expect(engine.pendingTimeoutTokens[id] != nil)
+        engine.closeSession(id)
+        #expect(engine.pendingBuffers[id] == nil)
+        #expect(engine.pendingTimeoutTokens[id] == nil)
+    }
+
     @Test func terminalTabStateCodable() throws {
         let state = TerminalTabState(title: "Terminal 2", cwdPath: "/Users/test/project")
         let data = try JSONEncoder().encode(state)
