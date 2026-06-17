@@ -338,6 +338,14 @@ final class GhosttySurfaceView: NSView {
                event.charactersIgnoringModifiers?.lowercased() == "n" {
                 return super.performKeyEquivalent(with: event)
             }
+            // IME composition 活跃时，只转发 binding（如 Ctrl+C interrupt）
+            if markedText != nil {
+                let key = buildInputKey(from: event, action: GHOSTTY_ACTION_PRESS)
+                var bindingFlags = ghostty_binding_flags_e(rawValue: 0)
+                guard ghostty_surface_key_is_binding(surface, key, &bindingFlags) else {
+                    return super.performKeyEquivalent(with: event)
+                }
+            }
             sendKeyEvent(event, action: GHOSTTY_ACTION_PRESS, surface: surface)
             return true
         }

@@ -16,7 +16,7 @@
 
 ## 0. 一句话定义
 
-PathDeck 是一个 **Finder-first 的 macOS 文件工作台**：用户以文件夹、文件、预览、搜索、整理为主心智工作；需要命令行时，Terminal 就在当前文件上下文中自然出现；Terminal 中运行的任意 CLI、脚本或第三方 AI coding agent 对文件系统造成的变化，会被 App 自动感知、聚合、展示，并尽可能提供预览与恢复能力。
+PathDeck 是一个 **Finder-first 的 macOS 文件工作台**：用户以文件夹、文件、预览、搜索、整理为主心智工作；需要命令行时，Terminal 就在当前文件上下文中自然出现；Terminal 中运行的任意 CLI、脚本或第三方 AI coding agent 对文件系统造成的变化，会被 App 通过 FSWatcher 自动感知并刷新到文件列表中，可直接预览相关文件。
 
 ---
 
@@ -60,7 +60,7 @@ CLI Agent 能做事，但对文件变化不可见。
 ```txt
 以 Finder 的方式进入
 以 Terminal 的能力执行
-以 Preview / Recent Changes 的方式理解结果
+以 Preview / 实时文件刷新 的方式理解结果
 ```
 
 这意味着产品主心智应是：
@@ -71,7 +71,6 @@ File
 Selection
 Preview
 Search
-Recent Changes
 Terminal Here
 ```
 
@@ -153,8 +152,8 @@ Terminal 与文件系统之间的上下文桥
 | G2 | 原生集成高质量 Terminal | Terminal 应像文件视图的一部分，而不是外部窗口 |
 | G3 | 支持任意 CLI / Agent | 用户可在 Terminal 中自由运行 claude、codex、kimi、bub、aider、ssh、python、ffmpeg、rsync 等 |
 | G4 | 打通文件与 Terminal 上下文 | 选中文件、路径、预览内容、Terminal cwd、Terminal 输出路径之间自然流转 |
-| G5 | 透明记录文件变化 | 用户不需要理解 Git，也能知道最近发生了什么、哪些文件被创建/修改/删除 |
-| G6 | 尽可能提供预览和恢复 | 对适合的文件提供 before/after、版本、恢复上一版等能力 |
+| G5 | 透明感知文件变化 | 文件列表通过 FSWatcher 实时刷新，用户无需手动刷新即可看到变化 |
+| G6 | 尽可能提供预览 | 对适合的文件提供 Quick Look / 元数据预览 |
 | G7 | 保持普通用户心智低负担 | 不强迫用户理解 branch、worktree、agent profile、runtime、tool calling |
 
 ### 3.2 非目标
@@ -164,7 +163,7 @@ Terminal 与文件系统之间的上下文桥
 | NG1 | 不做内置 Agent Runtime | 不负责 planner、tool calling、memory、multi-agent orchestration |
 | NG2 | 不为每个 Agent 做深度 adapter | 不强绑定 Claude Code、Codex、Kimi Code 等 CLI 行为 |
 | NG3 | 不把 Git 作为用户主心智 | Git 可作为内部辅助能力，但不能让普通用户承担 Git 概念 |
-| NG4 | 不承诺任意 Terminal 操作 100% 可撤销 | 对任意 CLI 写入，只能尽力观察、记录和恢复有快照的内容 |
+| NG4 | 不承诺任意 Terminal 操作可撤销 | 对任意 CLI 写入，只观察文件系统变化并实时刷新列表 |
 | NG5 | 不做 Finder 插件型产品 | Finder Extension 只作为入口，主体必须是完整 App |
 | NG6 | 不优先跨平台 | 第一阶段聚焦 macOS 原生体验 |
 
@@ -314,10 +313,9 @@ App 自动观察到文件变化。
 期望表现：
 
 ```txt
-新文件在文件列表中高亮
-Recent Changes 显示新增/修改/删除
+新文件在文件列表中自动出现
+文件列表自动刷新变化
 相关文件可直接预览
-文本类文件可显示前后差异
 ```
 
 成功标准：
@@ -345,11 +343,9 @@ Recent Changes 显示新增/修改/删除
 ↓
 Agent 修改或生成文件
 ↓
-PathDeck 自动聚合 Recent Changes
+PathDeck 文件列表自动刷新
 ↓
-用户查看文件、diff、preview
-↓
-必要时恢复上一版
+用户查看文件、preview
 ```
 
 成功标准：
@@ -375,7 +371,7 @@ Finder-like 浏览
 标签/收藏
 搜索
 需要时打开 Terminal 跑脚本
-Recent Changes 展示整理结果
+文件列表自动刷新整理结果
 ```
 
 成功标准：
@@ -398,7 +394,7 @@ Recent Changes 展示整理结果
 | Transparent | 自动观察变化，但不制造额外心智负担 |
 | Low-friction | 常见动作一步完成：打开、预览、复制路径、Terminal Here |
 | Native macOS | 交互、性能、权限、拖拽、预览都应符合 macOS 习惯 |
-| Progressive Power | 普通用户只看到简单能力，高级用户可启用版本、规则、自动化 |
+| Progressive Power | 普通用户只看到简单能力，高级用户可启用规则、自动化 |
 | Safe by Default | 不主动扩大权限，不默默删除，不承诺不可实现的完全回滚 |
 
 ---
@@ -415,11 +411,10 @@ Recent Changes 展示整理结果
 │              │                        │                     │
 │ Favorites    │ List / Column / Grid   │ Quick Look          │
 │ Recents      │ Sort / Filter          │ Metadata            │
-│ Workspaces   │ Selection              │ Versions            │
-│ Tags         │ Highlight Changes      │ Actions             │
-│ Changes      │                        │                     │
+│ Workspaces   │ Selection              │ Actions             │
+│ Tags         │                        │                     │
 ├──────────────┴────────────────────────┴─────────────────────┤
-│ Terminal Panel / Recent Changes Panel                        │
+│ Terminal Panel                                                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -427,12 +422,11 @@ Recent Changes 展示整理结果
 
 | 区域 | 说明 |
 |---|---|
-| Sidebar | 收藏、最近位置、工作区、标签、最近变化 |
+| Sidebar | 收藏、最近位置、工作区、标签 |
 | File Browser | 文件夹内容主视图，支持列表、列视图、图标/画廊视图 |
-| Preview Pane | 文件预览、元数据、版本、操作 |
+| Preview Pane | 文件预览、元数据、操作 |
 | Terminal Panel | 内嵌 Terminal，可底部/右侧/独立 tab 展示 |
-| Recent Changes | 当前文件夹/工作区的文件变化聚合 |
-| Command Palette | 快速执行常见动作，如 Terminal Here、Copy Path、Reveal Changes |
+| Command Palette | 快速执行常见动作，如 Terminal Here、Copy Path |
 
 ---
 
@@ -901,6 +895,8 @@ Terminal cd 到新目录后，UI 能展示当前 cwd
 
 ### FR-CHANGE-001：工作区文件变化监听
 
+> **Killed (D1 2026-06-16)** — FSWatcher 保留文件列表实时刷新能力，但不再做事件记录/聚合/面板。
+
 优先级：P0
 
 App 在用户打开工作区后，自动监听文件系统变化。
@@ -928,6 +924,8 @@ metadata_changed
 ---
 
 ### FR-CHANGE-002：Recent Changes 面板
+
+> **Killed (D1 2026-06-16)**
 
 优先级：P0
 
@@ -964,6 +962,8 @@ Downloads 中删除 2 个文件
 
 ### FR-CHANGE-003：Terminal 活跃期间变化归因
 
+> **Killed (D1 2026-06-16)**
+
 优先级：P1
 
 在不深度监控进程的前提下，将文件变化弱关联到活跃 Terminal 时间窗口。
@@ -986,6 +986,8 @@ UI 文案使用“可能由当前 Terminal 产生”或“Terminal 活跃期间�
 ---
 
 ### FR-CHANGE-004：轻量文件版本
+
+> **Killed (D1 2026-06-16)**
 
 优先级：P1
 
@@ -1028,6 +1030,8 @@ build/dist/cache 目录
 
 ### FR-CHANGE-005：Diff / Before After
 
+> **Killed (D1 2026-06-16)**
+
 优先级：P1
 
 对文本类文件提供修改前后对比。
@@ -1062,6 +1066,8 @@ worktree
 
 ### FR-CHANGE-006：恢复上一版
 
+> **Killed (D1 2026-06-16)**
+
 优先级：P1
 
 对有快照的文件提供恢复能力。
@@ -1078,6 +1084,8 @@ worktree
 ---
 
 ### FR-CHANGE-007：变化忽略规则
+
+> **Killed (D1 2026-06-16)**
 
 优先级：P1
 
@@ -1141,6 +1149,8 @@ Recent Changes 中可临时显示被忽略变化
 ---
 
 ### FR-SEARCH-003：变化搜索
+
+> **Killed (D1 2026-06-16)** — Recent Changes 已移除，变化搜索失去数据源。
 
 优先级：P1
 
@@ -1225,6 +1235,8 @@ scrollback 行数
 
 ### FR-SETTINGS-002：Change Journal 设置
 
+> **Killed (D1 2026-06-16)**
+
 优先级：P1
 
 设置项：
@@ -1287,7 +1299,7 @@ Terminal transcript 默认不做云同步
 ```txt
 管理文件
 打开 Terminal
-查看最近变化
+预览文件
 ```
 
 避免首启强调：
@@ -1312,7 +1324,7 @@ Terminal 自动进入当前目录
 ↓
 用户运行任意命令
 ↓
-文件变化自动出现在 Recent Changes
+文件列表自动刷新变化
 ```
 
 ---
@@ -1343,39 +1355,13 @@ Send as:
 
 ## 10.4 查看 Terminal 造成的变化
 
-```txt
-Terminal 中运行命令
-↓
-文件系统发生变化
-↓
-Recent Changes badge 更新
-↓
-用户点击 Recent Changes
-↓
-看到“刚刚新增 4 个文件，修改 2 个文件”
-↓
-点击文件查看 preview / diff
-↓
-必要时恢复上一版
-```
+> **Killed (D1 2026-06-16)** — Recent Changes / Diff / Restore 流程已移除。Terminal 运行命令后，文件列表通过 FSWatcher 自动刷新。
 
 ---
 
 ## 10.5 恢复上一版
 
-```txt
-用户在 Recent Changes 中打开一个修改过的文本文件
-↓
-点击 Compare with Previous Version
-↓
-查看 before / after
-↓
-点击 Restore Previous Version
-↓
-确认
-↓
-文件恢复，恢复动作进入 Recent Changes
-```
+> **Killed (D1 2026-06-16)** — 版本快照与恢复流程已移除。
 
 ---
 
@@ -1412,12 +1398,7 @@ PathDeck.app
 │   ├── terminal output path → preview
 │   └── drag/drop path bridge
 │
-├── Change Journal
-│   ├── FSEvents watcher
-│   ├── SQLite event store
-│   ├── lightweight version store
-│   ├── diff engine
-│   └── restore engine
+├── FSEvents Watcher (文件列表实时刷新)
 │
 └── Extensions
     ├── Finder Sync / Services entry
@@ -1437,10 +1418,8 @@ PathDeck.app
 | Terminal 抽象 | TerminalEngine protocol | 隔离 libghostty API 变化风险 |
 | PTY 管理 | Swift + POSIX PTY/fork/Process | 真 shell 会话 |
 | 文件监听 | FSEvents | 监听目录树变化 |
-| 数据库 | SQLite（已移除） | 本地状态、事件、版本索引 |
-| 搜索 | Spotlight + SQLite FTS | 元数据搜索与本地全文搜索 |
+| 搜索 | Spotlight | 元数据搜索 |
 | 预览 | Quick Look / PDFKit / AVKit / Text renderer | 原生预览能力 |
-| Diff | 自研文本 diff 或集成轻量 diff lib | 不暴露 Git 心智 |
 | 分发 | Developer ID + Notarization | 避免 Mac App Store 沙盒限制过重 |
 
 ---
@@ -1535,6 +1514,8 @@ CREATE TABLE terminal_sessions (
 
 ## 12.3 file_events
 
+> **Killed (D1 2026-06-16)** — 数据模型已废弃，保留供历史参考。
+
 ```sql
 CREATE TABLE file_events (
   id TEXT PRIMARY KEY,
@@ -1559,6 +1540,8 @@ CREATE TABLE file_events (
 
 ## 12.4 file_versions
 
+> **Killed (D1 2026-06-16)** — 数据模型已废弃，保留供历史参考。
+
 ```sql
 CREATE TABLE file_versions (
   id TEXT PRIMARY KEY,
@@ -1576,6 +1559,8 @@ CREATE TABLE file_versions (
 ---
 
 ## 12.5 change_groups
+
+> **Killed (D1 2026-06-16)** — 数据模型已废弃，保留供历史参考。
 
 ```sql
 CREATE TABLE change_groups (
@@ -1623,6 +1608,8 @@ App-mediated paste 可做路径转义
 ---
 
 ## 13.3 文件版本隐私
+
+> **Killed (D1 2026-06-16)** — 轻量版本快照已随 Change Journal 移除，本节保留供历史参考。
 
 轻量版本会保存文件内容副本，必须可控。
 
@@ -1673,10 +1660,9 @@ transcript 保存需支持手动清除
 |---|---|
 | 打开普通文件夹 | 1s 内显示首屏 |
 | 10,000 文件目录滚动 | 无明显卡顿 |
-| 文件变化聚合 | 大批量变化不阻塞 UI |
+| FSWatcher 文件刷新 | 大批量变化不阻塞 UI |
 | Terminal 输入延迟 | 接近原生 Terminal 体验 |
 | Preview 元数据 | 300ms 内显示基础信息 |
-| SQLite 查询 Recent Changes | 100ms 级响应 |
 
 ---
 
@@ -1686,8 +1672,6 @@ transcript 保存需支持手动清除
 Terminal 子进程崩溃不能导致 App 崩溃
 libghostty adapter 异常需隔离
 FSEvents 丢事件时可触发目录 rescan
-SQLite 损坏需有恢复策略
-版本库达到上限需自动清理
 ```
 
 ---
@@ -1731,9 +1715,7 @@ Finder-like 文件列表
 Open Terminal Here
 文件路径发送到 Terminal
 拖文件到 Terminal 插入路径
-FSEvents 监听当前工作区变化
-Recent Changes 基础面板
-SQLite 本地记录
+FSEvents 监听当前工作区变化（文件列表实时刷新）
 基础设置
 ```
 
@@ -1768,7 +1750,6 @@ libghostty 嵌入 Demo
 PTY shell 可运行
 文件夹打开与列表展示
 FSEvents 监听 Demo
-SQLite event 写入 Demo
 ```
 
 验收：
@@ -1776,7 +1757,6 @@ SQLite event 写入 Demo
 ```txt
 能在 App 内打开真实 Terminal
 能监听当前文件夹新增/修改/删除
-能把变化写入 SQLite 并显示在简单列表中
 ```
 
 ---
@@ -1917,7 +1897,6 @@ App 可作为日常文件工作台试用
 | 每日打开工作区次数 | 用户是否把它当作工作入口 |
 | Terminal Here 使用次数 | Terminal 融合是否有价值 |
 | Send Path to Terminal 使用次数 | 文件与 Terminal 桥是否成立 |
-| Recent Changes 打开率 | 变化可见性是否被需要 |
 | Preview 打开率 | Finder-like 工作流是否成立 |
 | 外部 Finder/Terminal 切换减少 | 核心价值是否达成 |
 
@@ -1929,7 +1908,6 @@ App 可作为日常文件工作台试用
 Terminal crash rate
 App crash rate
 FSEvents missed-event recovery count
-版本恢复成功率
 大目录打开耗时
 路径转义错误率
 ```
@@ -1990,22 +1968,7 @@ App 只能观察文件系统变化，不能低成本精确知道哪个进程写�
 
 ### R3：版本保存带来隐私和磁盘压力
 
-风险：
-
-```txt
-保存文件副本可能包含敏感内容，也可能占用大量空间
-```
-
-应对：
-
-```txt
-默认只对小型文本启用
-清晰设置
-大小上限
-保留周期
-一键清除
-敏感目录默认排除
-```
+> **Killed (D1 2026-06-16)** — 轻量版本快照已移除，本风险不再适用。
 
 ---
 
@@ -2022,7 +1985,7 @@ Finder 是系统级产品，用户对细节要求极高
 ```txt
 不一开始承诺完整替代 Finder
 先定位为工作区级 Finder-first 文件工作台
-优先做好打开文件夹、浏览、预览、Terminal、Recent Changes
+优先做好打开文件夹、浏览、预览、Terminal
 ```
 
 ---
@@ -2055,10 +2018,9 @@ Finder Extension 能做入口、右键菜单、badge，但承载不了：
 ```txt
 内嵌 Terminal
 多 Pane 工作区
-Recent Changes
-透明版本
+实时文件刷新
 文件/Terminal 双向上下文桥
-复杂 Preview 与 Diff
+Preview
 ```
 
 因此必须做完整 App，Finder Extension 只做外围入口。
@@ -2105,9 +2067,8 @@ rsync
 普通文件工作流中，用户更关心：
 
 ```txt
-刚刚发生了什么
+刚刚发生了什么（文件列表自动刷新）
 能不能预览
-能不能恢复
 ```
 
 而不是：
@@ -2151,7 +2112,7 @@ PathDeck 的名字不直接绑定 AI、Agent、Coding 或 Finder 替代品，适
 以文件路径为核心
 以 Finder 体验为入口
 以 Terminal 承载命令能力
-以 Recent Changes 呈现执行结果
+以实时文件刷新呈现执行结果
 ```
 
 ---
@@ -2168,12 +2129,9 @@ Send Path to Terminal
 Send Selection to Terminal
 Copy Relative Path
 Copy Absolute Path
-Recent Changes
-Changed Just Now
-Terminal Active Changes
-Compare with Previous Version
-Restore Previous Version
 ```
+
+<!-- D1 killed 文案，待 git status 方案时复活：Recent Changes / Changed Just Now / Terminal Active Changes / Compare with Previous Version / Restore Previous Version -->
 
 中文：
 
@@ -2185,12 +2143,9 @@ Restore Previous Version
 发送选中内容到终端
 复制相对路径
 复制绝对路径
-最近变化
-刚刚修改
-终端活跃期间的变化
-与上一版比较
-恢复上一版
 ```
+
+<!-- D1 killed 文案，待 git status 方案时复活：最近变化 / 刚刚修改 / 终端活跃期间的变化 / 与上一版比较 / 恢复上一版 -->
 
 ---
 
@@ -2200,14 +2155,14 @@ Restore Previous Version
 
 ```txt
 PathDeck is a Finder-first command workspace for macOS.
-Browse files, preview context, open terminals, and track changes in one place.
+Browse files, preview context, and open terminals in one place.
 ```
 
 中文：
 
 ```txt
 PathDeck 是一个 Finder-first 的 macOS 文件工作台。
-它把文件浏览、预览、Terminal 和最近变化放在同一个上下文里。
+它把文件浏览、预览和 Terminal 放在同一个上下文里。
 ```
 
 一句话版本：
@@ -2243,9 +2198,9 @@ AI Finder
 | 编号 | 问题 | 倾向 |
 |---|---|---|
 | Q1 | 是否默认保存 Terminal scrollback？ | 默认否，只保存 session 元数据 |
-| Q2 | 是否默认启用文本版本快照？ | 可在首次打开工作区时引导选择 |
+| Q2 | ~~是否默认启用文本版本快照？~~ | D1 killed，版本快照已移除 |
 | Q3 | 是否提供代码编辑器能力？ | MVP 不做，只预览；后续可支持轻量编辑 |
-| Q4 | 是否做语义搜索？ | P3，先做好文件名/内容/变化搜索 |
+| Q4 | 是否做语义搜索？ | P3，先做好文件名/内容搜索 |
 | Q5 | 是否支持 iCloud Drive 特殊状态？ | P1/P2，需要处理 placeholder、下载状态 |
 | Q6 | 是否支持外置盘和网络盘？ | P1，需处理性能和事件可靠性 |
 | Q7 | 是否支持多窗口多工作区？ | P1，MVP 可先单窗口多 tab |
@@ -2284,5 +2239,5 @@ Electron 原型产品
 
 最重要的体验目标：
 
-> 用户感觉自己仍在以 Finder 的方式处理文件，但每一个路径都天然带着 Terminal、Preview 和 Recent Changes；Terminal 或 AI CLI Agent 对文件系统造成的变化会自动浮现出来。
+> 用户感觉自己仍在以 Finder 的方式处理文件，但每一个路径都天然带着 Terminal 和 Preview；Terminal 或 AI CLI Agent 对文件系统造成的变化会通过 FSWatcher 自动刷新到文件列表中。
 
