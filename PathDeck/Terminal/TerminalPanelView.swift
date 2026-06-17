@@ -47,7 +47,7 @@ struct TerminalPanelView: NSViewRepresentable {
             }
         }
 
-        guard let id = activeSessionID else { return }
+        guard isActive, let id = activeSessionID else { return }
         let termView = engine.terminalView(for: id)
         if termView.superview !== container {
             container.addSubview(termView)

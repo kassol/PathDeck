@@ -8,30 +8,18 @@ enum SortColumn: String {
 
 @Observable
 final class WorkspaceModel {
-    private static let lastFolderKey = "lastOpenedFolder"
-    private static let sortColumnKey = "sortColumn"
-    private static let sortAscendingKey = "sortAscending"
-    private static let showHiddenKey = "showHidden"
-
     private(set) var currentURL: URL
     private(set) var items: [FileItem] = []
     private(set) var allItems: [FileItem] = []
 
-    var sortColumn: SortColumn = .name {
-        didSet { defaults.set(sortColumn.rawValue, forKey: Self.sortColumnKey) }
-    }
-    var sortAscending: Bool = true {
-        didSet { defaults.set(sortAscending, forKey: Self.sortAscendingKey) }
-    }
-    var showHidden: Bool = false {
-        didSet { defaults.set(showHidden, forKey: Self.showHiddenKey) }
-    }
+    var sortColumn: SortColumn = .name
+    var sortAscending: Bool = true
+    var showHidden: Bool = false
     var selectedURLs: [URL] = []
     var pendingRenameURL: URL?
     /// 命令式选择信号：驱动 `FileTableView` 选中这组 URL 的行并滚动到首项（单项即长度 1），消费后置 nil。
     var revealSelection: [URL]?
     var isSearching: Bool = false
-    var isBottomPanelVisible: Bool = false
     var searchQuery: String = "" {
         didSet { applySearch() }
     }
@@ -59,37 +47,13 @@ final class WorkspaceModel {
         return segments
     }
 
-    private let defaults: UserDefaults
     private var watcher: FSWatcher?
 
-    init(root: URL? = nil, defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-
-        if let root {
-            currentURL = root
-        } else if let saved = defaults.string(forKey: Self.lastFolderKey) {
-            let url = URL(fileURLWithPath: saved)
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDir),
-               isDir.boolValue {
-                currentURL = url
-            } else {
-                currentURL = FileManager.default.homeDirectoryForCurrentUser
-            }
-        } else {
-            currentURL = FileManager.default.homeDirectoryForCurrentUser
-        }
-
-        if let savedSort = defaults.string(forKey: Self.sortColumnKey),
-           let col = SortColumn(rawValue: savedSort) {
-            sortColumn = col
-        }
-        if defaults.object(forKey: Self.sortAscendingKey) != nil {
-            sortAscending = defaults.bool(forKey: Self.sortAscendingKey)
-        }
-        if defaults.object(forKey: Self.showHiddenKey) != nil {
-            showHidden = defaults.bool(forKey: Self.showHiddenKey)
-        }
+    init(root: URL, sortColumn: SortColumn = .name, sortAscending: Bool = true, showHidden: Bool = false) {
+        self.currentURL = root
+        self.sortColumn = sortColumn
+        self.sortAscending = sortAscending
+        self.showHidden = showHidden
 
         watcher = FSWatcher { [weak self] in
             DispatchQueue.main.async { self?.reload() }
@@ -115,7 +79,6 @@ final class WorkspaceModel {
         isSearching = false
         reload()
         watcher?.watch(directory: currentURL)
-        defaults.set(currentURL.path(percentEncoded: false), forKey: Self.lastFolderKey)
     }
 
     /// 导航到首项父目录并高亮选择集（跨目录 reveal / Open Selection，单项即长度 1）。

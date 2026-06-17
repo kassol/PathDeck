@@ -14,13 +14,14 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 - `PendingTextBuffer.swift` — `writeText` pending 缓冲纯值类型：FIFO + 条数 64 / 字节 256KB 上限（超限丢队头最旧、单条超限仍接受）+ `SurfaceFailureReason` / `PendingDropReason` 枚举
 - `TerminalSession.swift` — 会话值类型（id, title, cwd, currentCwd）+ `TerminalTabState`（Codable，用于跨重启 tab 恢复），SwiftUI 可 ForEach
 - `ShellIntegration.swift` — zsh/bash shell integration：ZDOTDIR 注入 OSC 7 precmd/chpwd hook（zsh），PROMPT_COMMAND 注入（bash）
-- `TerminalTabBar.swift` — 多 Tab 栏 SwiftUI 视图：tab 切换 / 新建（+按钮）/ 关闭（×按钮）/ 双击重命名
-- `TerminalPanelView.swift` — `NSViewRepresentable` 多 session 容器：container NSView + `isHidden` 切换活跃 surface + 焦点跟随
+- `TerminalTabBar.swift` — Finder-first 模式横向 Tab 栏 SwiftUI 视图：tab 切换 / 新建（+按钮）/ 关闭（×按钮）/ 双击重命名。API 为 data+closure（非 binding），显示当前 FileTab 的终端 session 子集
+- `VerticalTerminalTabBar.swift` — Terminal-first 模式纵向 Tab 列表（140pt 宽，36pt 项高）：标题 + cwd 副文本 + 左侧 2pt accent 活跃指示 + 底部固定新建按钮
+- `TerminalPanelView.swift` — `NSViewRepresentable` 多 session 容器：container NSView + `isHidden` 切换活跃 surface + 焦点跟随。传入 allTerminalSessionIDs（跨 Tab）避免切 Tab 时误删其他 Tab 的 surface subview
 - `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + runtime callbacks + `wakeup`→合并主队列 `app_tick` + `action_cb` 处理 `GHOSTTY_ACTION_PWD`/`SET_TITLE`（多 handler 注册）/`SHOW_CHILD_EXITED`（子进程退出 → post `ghosttySurfaceDidClose` 关 tab + `return true` 抑制 "press any key" overlay）
 - `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置 + `onSurfaceReady` 回调（`createSurface` 成功后触发）+ `onSurfaceFailed` 回调（app 未初始化 / `ghostty_surface_new` 返回 nil 时触发，供 engine 立即丢弃 pending）+ 读取 Settings（shell/font size）+ shell integration env vars 注入
 - `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载（S2 遗留，保留作调试入口）
 
-入口：主窗口底部 Terminal Panel（⌃\` 或 Toolbar 按钮切换），支持多 tab；独立冒烟窗口（⌃⌥⌘T）。
+入口：Finder-first 模式底部 Terminal Panel + Terminal-first 模式全屏终端（⌃\` 三态循环切换），每个 FileTab 独立的终端 session 组 + anchor cwd 绑定；独立冒烟窗口（⌃⌥⌘T）。
 
 ## 构建前置
 
@@ -48,6 +49,7 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 
 ## 变更日志
 
+- 2026-06-17 S23 VerticalTerminalTabBar + TerminalTabBar API 重构：新增 `VerticalTerminalTabBar.swift`（Terminal-first 模式纵向列表）。`TerminalTabBar` API 从 `@Binding` 改为 data+closure 模式（`onSelect`/`onRename` 回调），适配 TabManager per-tab session 数据流。TerminalPanelView 传入 `allTerminalSessionIDs`（跨所有 Tab），切 Tab 时正确 hide/show 而不误删 subview。
 - 2026-06-16 修复 `exit` 不自动关闭 tab（需 GUI 验证）：根因——当前 libghostty 产物的子进程退出走 embedder action `GHOSTTY_ACTION_SHOW_CHILD_EXITED`，**不**走 `wait_after_command`/`close_surface_cb`；未处理该 action 时 Ghostty 显示默认 "press any key" overlay（S13 假设的 `wait_after_command=false` 机制在 embedder 模型下不负责退出关闭）。`GhosttyApp.handleAction` 新增处理 `GHOSTTY_ACTION_SHOW_CHILD_EXITED`：post `ghosttySurfaceDidClose` 通知触发关闭退出 surface 对应 tab（经 `process_exited` 反查），`return true` 抑制 overlay。`config.wait_after_command = false`（GhosttySurfaceView）保留无害。此行为依赖真实 libghostty 子进程退出，单测覆盖不到。
 - 2026-06-16 S19 writeText 竞态加固：新增 `PendingTextBuffer`（纯值类型，FIFO + 条数 64 / 字节 256KB 上限，超限丢队头最旧、单条超限仍接受），取代 `GhosttyTerminalEngine` 裸数组 `pendingTexts`。`GhosttySurfaceView` 新增 `onSurfaceFailed` 回调：`createSurface` 两条失败出口（app 未初始化 / `ghostty_surface_new` 返回 nil）显式通知 engine 立即丢弃 pending 并经 `onPendingDropped` 上报，不再等盲目 5s 超时静默丢。超时 token 化可取消（flush/close/失败均 cancel，消除 close 后残留 timer 误触发）。`handleSurfaceClose` 改遍历**全部**已退出 surface（抽 `exitedSessionIDs` 纯函数），修复同周期多 tab 退出只关一个。`pendingBuffers`/`pendingTimeoutTokens` 降 internal 作测试缝。156 个单测通过（+7：PendingTextBufferTests ×4 + TerminalSessionTests exitedSessionIDs/overflow 上报/close 取消超时）。
 - 2026-06-15 S17 writeText 竞态修复 + tab 恢复：`GhosttyTerminalEngine` 新增 `pendingTexts` buffer，surface 未就绪时缓存文本，`onSurfaceReady` flush（5 秒超时保护）。`GhosttySurfaceView` 新增 `onSurfaceReady` 闭包。新增 `TerminalTabState`（Codable）用于 terminal tab 跨重启序列化恢复。

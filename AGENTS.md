@@ -44,12 +44,15 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）+ FSWatcher（FSEvents 实时监听当前目录文件变化 → reload 列表）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal。S16 新增 Settings 窗口（Terminal shell/font/scrollback）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。D1 Dogfood：移除 Change Journal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 迁入 FileWorkspace/ 简化为纯信号通知，移除 GRDB 依赖。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）+ FSWatcher（FSEvents 实时监听当前目录文件变化 → reload 列表）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）+ S23 VerticalTerminalTabBar（Terminal-first 模式垂直 Tab 列表）。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal。S16 新增 Settings 窗口（Terminal shell/font/scrollback）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。D1 Dogfood：移除 Change Journal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 迁入 FileWorkspace/ 简化为纯信号通知，移除 GRDB 依赖。S23 文件 Tab + Terminal-first 模式：FileTab 多目录并行 + TabManager 状态管理 + anchor cwd 一对多绑定 + Finder-first/Terminal-first per-tab 双模式 + ⌘W NSEvent local monitor 三层优先级。
 
 ```
 PathDeck/                  App 源码
 PathDeck/PathDeckApp.swift @main（Window scene 单窗口，防 WindowGroup 重复开窗）+ AppDelegate（kAEGetURL 拦截 URL Scheme + application(_:open:) Open With + Services 注册）
-PathDeck/ContentView.swift NavigationSplitView 主布局 + 底部 Terminal 面板 + Preview Pane + 消费 AppRouter
+PathDeck/ContentView.swift NavigationSplitView 主布局 + FileTabBar + 双模式布局（Finder-first/Terminal-first）+ NSEvent local monitor ⌘W（终端焦点关终端/多 Tab 关 Tab/单 Tab 关窗口）+ 消费 AppRouter
+PathDeck/FileTab.swift     FileTab 值类型（id/title/mode/isTerminalVisible/anchorCwd/terminalSessionIDs）+ FileTabState（Codable 持久化）
+PathDeck/TabManager.swift  @Observable 多 Tab 状态管理：FileTab CRUD + WorkspaceModel 多实例 + 终端 session per-tab 绑定 + anchor cwd 生命周期 + 全局偏好（sort/showHidden）+ per-tab 双模式 + 持久化
+PathDeck/FileTabBar.swift  横向文件 Tab bar UI（28pt，切换/新建/关闭/重命名）
 PathDeck/SidebarView.swift Sidebar（Favorites + Pinned）+ PinnedFolders bookmark 持久化
 PathDeck/AppRouter.swift   外部入口（URL Scheme/Services/Open With）归一中介，@Observable 一次性令牌
 PathDeck/URLSchemeHandler.swift  pathdeck:// 解析 + 安全校验（查询参数式，目录/存在性校验）
@@ -165,6 +168,7 @@ xcodebuild -deleteComponent MetalToolchain
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-17 **S23 文件 Tab + Terminal-first 模式**：FileTab 多目录并行浏览 + TabManager @Observable 状态管理 + 终端 anchor cwd 一对多绑定 + Finder-first/Terminal-first per-tab 双模式 + FileTabBar（横向 28pt）+ VerticalTerminalTabBar（纵向 140pt）+ ⌘T/⌃Tab/⌃⇧Tab/⌘1-9 Tab 快捷键 + ⌘W NSEvent local monitor（终端焦点关终端/多 Tab 关 Tab/单 Tab 关窗口）+ ⌃` toggle 终端显隐 + ⌃⇧N 新建终端 + WorkspaceModel 多实例适配（移除全局 UserDefaults 持久化）+ Tab 列表 + 终端关联 + 模式全量持久化。
 - 2026-06-16 **D1 Kill Change Journal**（Dogfood 第一刀）：移除 ChangeJournal 全栈（10 源文件 + 8 测试 + Settings tab），FSWatcher 迁入 FileWorkspace/ 简化为纯信号，移除 GRDB 包依赖。底部面板仅保留 Terminal。
 - 2026-06-16 **S22 CLI helper**（M5 闭合）：`pathdeck` 命令行工具（参数解析 + URL 构造 + `/usr/bin/open`）+ `CLIInstaller` 安装菜单。203 测试。
 - 2026-06-16 **Pre-S22 稳定化**：Kill FinderSync Extension + 10k 性能基线 + reveal firmlink 修复。

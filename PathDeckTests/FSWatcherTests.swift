@@ -24,9 +24,6 @@ struct FSWatcherTests {
     private static let dirFlag = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
     private static let modifiedFlag = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
 
-    // The coalesce window is 0.5s; wait past it to let any scheduled flush run.
-    private static let settleInterval: TimeInterval = 0.7
-
     private func makeTempDir() throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("PathDeckTests-\(UUID().uuidString)")
@@ -34,7 +31,6 @@ struct FSWatcherTests {
         return tmp
     }
 
-    // Mirrors the normalization watch(directory:) applies before storing watchedDirectory.
     private func watchedPath(_ dir: URL) -> String {
         var path = dir.path(percentEncoded: false)
         if path.hasSuffix("/") && path.count > 1 {
@@ -43,20 +39,22 @@ struct FSWatcherTests {
         return path
     }
 
+    // MARK: - Filter tests (no real stream, deterministic)
+
     @Test func parentMismatchIsIgnored() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let counter = CallCounter()
         let watcher = FSWatcher { counter.increment() }
-        watcher.watch(directory: tmp)
-        defer { watcher.stop() }
+        watcher.setWatchedDirectory(tmp)
 
-        watcher.handleRawEvents(
-            paths: ["/some/other/dir/file.txt"],
-            flags: [Self.fileFlag]
-        )
-        Thread.sleep(forTimeInterval: Self.settleInterval)
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: ["/some/other/dir/file.txt"],
+                flags: [Self.fileFlag]
+            )
+        }
 
         #expect(counter.count == 0)
     }
@@ -67,15 +65,14 @@ struct FSWatcherTests {
 
         let counter = CallCounter()
         let watcher = FSWatcher { counter.increment() }
-        watcher.watch(directory: tmp)
-        defer { watcher.stop() }
+        watcher.setWatchedDirectory(tmp)
 
-        // Parent matches, but neither file nor dir flag is set.
-        watcher.handleRawEvents(
-            paths: [watchedPath(tmp) + "/file.txt"],
-            flags: [Self.modifiedFlag]
-        )
-        Thread.sleep(forTimeInterval: Self.settleInterval)
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: [watchedPath(tmp) + "/file.txt"],
+                flags: [Self.modifiedFlag]
+            )
+        }
 
         #expect(counter.count == 0)
     }
@@ -86,35 +83,47 @@ struct FSWatcherTests {
 
         let counter = CallCounter()
         let watcher = FSWatcher { counter.increment() }
-        watcher.watch(directory: tmp)
-        defer { watcher.stop() }
+        watcher.setWatchedDirectory(tmp)
 
-        watcher.handleRawEvents(
-            paths: [watchedPath(tmp) + "/sub/file.txt"],
-            flags: [Self.fileFlag]
-        )
-        Thread.sleep(forTimeInterval: Self.settleInterval)
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: [watchedPath(tmp) + "/sub/file.txt"],
+                flags: [Self.fileFlag]
+            )
+        }
 
         #expect(counter.count == 0)
     }
+
+    // MARK: - Coalesce test (no real stream, semaphore for determinism)
 
     @Test func rapidEventsCoalesceToSingleCall() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
+        let semaphore = DispatchSemaphore(value: 0)
         let counter = CallCounter()
-        let watcher = FSWatcher { counter.increment() }
-        watcher.watch(directory: tmp)
-        defer { watcher.stop() }
+        let watcher = FSWatcher {
+            counter.increment()
+            semaphore.signal()
+        }
+        watcher.setWatchedDirectory(tmp)
 
         let base = watchedPath(tmp)
-        watcher.handleRawEvents(paths: [base + "/a.txt"], flags: [Self.fileFlag])
-        watcher.handleRawEvents(paths: [base + "/b.txt"], flags: [Self.fileFlag])
-        watcher.handleRawEvents(paths: [base + "/sub"], flags: [Self.dirFlag])
-        Thread.sleep(forTimeInterval: Self.settleInterval)
+        watcher.queue.sync {
+            watcher.handleRawEvents(paths: [base + "/a.txt"], flags: [Self.fileFlag])
+            watcher.handleRawEvents(paths: [base + "/b.txt"], flags: [Self.fileFlag])
+            watcher.handleRawEvents(paths: [base + "/sub"], flags: [Self.dirFlag])
+        }
 
+        let result = semaphore.wait(timeout: .now() + 3.0)
+        #expect(result == .success)
+        // Brief wait to verify no second call
+        Thread.sleep(forTimeInterval: 0.2)
         #expect(counter.count == 1)
     }
+
+    // MARK: - Stop tests (need real stream for stop() logic)
 
     @Test func stopFlushesWhenDirty() throws {
         let tmp = try makeTempDir()
@@ -124,8 +133,12 @@ struct FSWatcherTests {
         let watcher = FSWatcher { counter.increment() }
         watcher.watch(directory: tmp)
 
-        watcher.handleRawEvents(paths: [watchedPath(tmp) + "/a.txt"], flags: [Self.fileFlag])
-        // stop() runs before the 0.5s flush fires; it must flush synchronously.
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: [watchedPath(tmp) + "/a.txt"],
+                flags: [Self.fileFlag]
+            )
+        }
         watcher.stop()
 
         #expect(counter.count == 1)
@@ -139,8 +152,12 @@ struct FSWatcherTests {
         let watcher = FSWatcher { counter.increment() }
         watcher.watch(directory: tmp)
 
-        // Filtered event leaves the watcher clean, so stop() must not fire.
-        watcher.handleRawEvents(paths: ["/elsewhere/a.txt"], flags: [Self.fileFlag])
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: ["/elsewhere/a.txt"],
+                flags: [Self.fileFlag]
+            )
+        }
         watcher.stop()
 
         #expect(counter.count == 0)

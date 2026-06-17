@@ -12,7 +12,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）+ `isBottomPanelVisible`。持有 FSWatcher 做目录实时刷新。接受注入 `defaults: UserDefaults`（默认 `.standard`），sortColumn/sortAscending/showHidden 通过 didSet 持久化 |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）。持有 FSWatcher 做目录实时刷新。多实例设计：每个 FileTab 独立一个实例，`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，不读 UserDefaults；sort/showHidden 由 TabManager 统一管理 |
 | `FSWatcher.swift` | FSEvents 文件变化监听器：watch 当前目录 → 0.5s coalesce 去抖 → 信号回调触发 reload；只监听一级子项变化 |
 | `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look + 拖拽源（pasteboard writer） |
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
@@ -34,6 +34,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-17 S23 WorkspaceModel 多实例适配：移除 `defaults` 参数 + `lastFolderKey` + `isBottomPanelVisible` + didSet 持久化；`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，sort/showHidden 由 TabManager 统一管理和持久化。
 - 2026-06-16 D1 Kill Change Journal：移除 ChangeJournal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 简化后迁入本模块（纯信号回调，无事件分类），WorkspaceModel 剥离 ~10 属性 + ~7 方法，FileTableView 移除变化色点，PreviewPane 移除版本 section，移除 GRDB 依赖。
 - 2026-06-16 S18 `WorkspaceModel` 新增 `reveal(_ fileURLs: [URL])`：navigate 到首项父目录 → 设 `selectedURLs` + `revealSelection`。表格选择信号升级为 `revealSelection: [URL]?`，`FileTableView` 用 `IndexSet` 一次性选中全部行 + 滚动首项。供外部入口（Finder Services Reveal/Open Selection / URL Scheme）跨目录定位文件用。
 - 2026-06-15 S17 `WorkspaceModel` 注入 `defaults: UserDefaults` 参数（默认 `.standard`），隔离测试；sortColumn/sortAscending/showHidden 通过 didSet 持久化到 `defaults`，init 时恢复。

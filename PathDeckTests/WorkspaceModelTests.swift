@@ -6,8 +6,7 @@ import Foundation
 struct WorkspaceModelTests {
 
     @Test func goUpReachesRootAndStops() {
-        let suite = UserDefaults(suiteName: "PathDeckTests-\(UUID().uuidString)")!
-        let model = WorkspaceModel(root: URL(fileURLWithPath: "/Users"), defaults: suite)
+        let model = WorkspaceModel(root: URL(fileURLWithPath: "/Users"))
 
         model.goUp()
         #expect(model.currentURL.path(percentEncoded: false) == "/")
@@ -26,8 +25,7 @@ struct WorkspaceModelTests {
     }
 
     private func makeModel() -> WorkspaceModel {
-        let suite = UserDefaults(suiteName: "PathDeckTests-\(UUID().uuidString)")!
-        return WorkspaceModel(root: FileManager.default.homeDirectoryForCurrentUser, defaults: suite)
+        WorkspaceModel(root: FileManager.default.homeDirectoryForCurrentUser)
     }
 
     @Test func revealSingleNavigatesToParentAndSelects() throws {

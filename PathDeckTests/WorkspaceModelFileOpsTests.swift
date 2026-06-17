@@ -14,8 +14,7 @@ struct WorkspaceModelFileOpsTests {
     }
 
     private func makeModel(root: URL) -> WorkspaceModel {
-        let suite = UserDefaults(suiteName: "PathDeckTests-\(UUID().uuidString)")!
-        return WorkspaceModel(root: root, defaults: suite)
+        WorkspaceModel(root: root)
     }
 
     // MARK: - Navigation

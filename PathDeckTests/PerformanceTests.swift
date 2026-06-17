@@ -18,9 +18,8 @@ struct PerformanceTests {
         let dir = try createTempDirectory(fileCount: 1_000)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let suite = UserDefaults(suiteName: "PathDeckPerfTests-\(UUID().uuidString)")!
         let start = CFAbsoluteTimeGetCurrent()
-        let model = WorkspaceModel(root: dir, defaults: suite)
+        let model = WorkspaceModel(root: dir)
         let elapsed = CFAbsoluteTimeGetCurrent() - start
 
         #expect(model.items.count == 1_000)
@@ -70,9 +69,8 @@ struct PerformanceTests {
         let dir = try createTempDirectory(fileCount: 10_000)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let suite = UserDefaults(suiteName: "PathDeckPerfTests-\(UUID().uuidString)")!
         let start = CFAbsoluteTimeGetCurrent()
-        let model = WorkspaceModel(root: dir, defaults: suite)
+        let model = WorkspaceModel(root: dir)
         let elapsed = CFAbsoluteTimeGetCurrent() - start
 
         #expect(model.items.count == 10_000)

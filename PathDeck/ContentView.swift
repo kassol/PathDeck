@@ -3,35 +3,36 @@ import UniformTypeIdentifiers
 
 extension FocusedValues {
     @Entry var workspaceModel: WorkspaceModel?
+    @Entry var tabManager: TabManager?
     @Entry var sendPathAction: (([URL]) -> Void)?
     @Entry var togglePreviewPaneAction: (() -> Void)?
+    @Entry var createTerminalAction: (() -> Void)?
 }
 
 struct ContentView: View {
-    @State private var model = WorkspaceModel()
+    @State private var tabManager = TabManager()
     @State private var terminalEngine = GhosttyTerminalEngine()
-    @State private var terminalSessions: [TerminalSession] = []
-    @State private var activeTerminalID: UUID?
     @State private var terminalHeight: CGFloat = 250
     @State private var isPreviewPaneVisible: Bool = true
     @State private var hasRestoredState: Bool = false
+    @State private var closeTabMonitor: Any?
 
     private let router = AppRouter.shared
 
     private let terminalMinHeight: CGFloat = 100
     private let terminalMaxFraction: CGFloat = 0.6
 
-    private static let terminalTabsKey = "terminalTabsState"
-    private static let bottomPanelVisibleKey = "bottomPanelVisible"
     private static let bottomPanelHeightKey = "bottomPanelHeight"
     private static let previewPaneVisibleKey = "previewPaneVisible"
+
+    private var model: WorkspaceModel? { tabManager.activeModel }
 
     var body: some View {
         NavigationSplitView {
             SidebarView(
-                currentURL: model.currentURL,
+                currentURL: model?.currentURL ?? FileManager.default.homeDirectoryForCurrentUser,
                 onNavigate: { url in
-                    model.navigate(to: url)
+                    model?.navigate(to: url)
                 }
             )
             .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 280)
@@ -41,13 +42,15 @@ struct ContentView: View {
             }
             .coordinateSpace(name: "workspace")
             .frame(minWidth: 520, minHeight: 480)
-            .navigationTitle(model.currentURL.lastPathComponent)
+            .navigationTitle(model?.currentURL.lastPathComponent ?? "PathDeck")
             .navigationSubtitle(
-                (model.currentURL.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+                model.map {
+                    ($0.currentURL.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+                } ?? ""
             )
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Button { model.goUp() } label: {
+                    Button { model?.goUp() } label: {
                         Image(systemName: "chevron.up")
                     }
                     .keyboardShortcut(.upArrow, modifiers: .command)
@@ -62,29 +65,44 @@ struct ContentView: View {
                     .help(isPreviewPaneVisible ? "隐藏预览面板" : "显示预览面板")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        model.isBottomPanelVisible.toggle()
-                    } label: {
-                        Image(systemName: "terminal")
+                    if tabManager.activeTabMode == .finderFirst {
+                        Button {
+                            tabManager.toggleTerminalVisibility()
+                        } label: {
+                            Image(systemName: "terminal")
+                        }
+                        .help(tabManager.activeTabTerminalVisible ? "隐藏终端" : "显示终端")
                     }
-                    .help(model.isBottomPanelVisible ? "隐藏底部面板" : "显示底部面板")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        tabManager.toggleActiveTabMode()
+                    } label: {
+                        Image(systemName: tabManager.activeTabMode == .terminalFirst
+                              ? "rectangle.split.2x1" : "rectangle.bottomhalf.filled")
+                    }
+                    .help(tabManager.activeTabMode == .terminalFirst ? "Finder-first 模式" : "Terminal-first 模式")
                 }
             }
-            .onChange(of: model.isBottomPanelVisible) { _, visible in
-                if visible && terminalSessions.isEmpty {
+            .onChange(of: tabManager.activeTabTerminalVisible) { _, visible in
+                if visible && tabManager.activeTabSessions.isEmpty {
                     createTerminalTab()
                 }
-                UserDefaults.standard.set(visible, forKey: Self.bottomPanelVisibleKey)
             }
             .onChange(of: router.pending) { _, _ in
                 handleExternalRoute()
             }
             .focusedSceneValue(\.workspaceModel, model)
+            .focusedSceneValue(\.tabManager, tabManager)
             .focusedSceneValue(\.sendPathAction) { urls in
                 sendPathToTerminal(urls)
             }
             .focusedSceneValue(\.togglePreviewPaneAction) {
                 isPreviewPaneVisible.toggle()
+            }
+            .focusedSceneValue(\.createTerminalAction) {
+                createTerminalTab()
+                if !tabManager.activeTabTerminalVisible { tabManager.activeTabTerminalVisible = true }
             }
             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
                 guard let provider = providers.first else { return false }
@@ -94,7 +112,7 @@ struct ContentView: View {
                     guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
                           isDir.boolValue else { return }
                     DispatchQueue.main.async {
-                        model.navigate(to: url)
+                        model?.navigate(to: url)
                         RecentFolders.shared.add(url)
                     }
                 }
@@ -102,13 +120,13 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
-        .onAppear { setupEngineCallbacks(); restoreState(); handleExternalRoute() }
-        .onDisappear { saveTerminalTabState() }
+        .onAppear { setupEngineCallbacks(); restoreState(); handleExternalRoute(); installCloseTabMonitor() }
+        .onDisappear { removeCloseTabMonitor(); tabManager.saveTabState() }
         .modifier(StatePersistenceModifier(
-            terminalSessions: terminalSessions,
+            tabManager: tabManager,
             terminalHeight: terminalHeight,
             isPreviewPaneVisible: isPreviewPaneVisible,
-            onSaveTerminalTabs: { saveTerminalTabState() }
+            onSaveTabState: { tabManager.saveTabState() }
         ))
     }
 
@@ -117,10 +135,8 @@ struct ContentView: View {
             closeTerminalTab(id)
         }
         terminalEngine.onCwdChange = { [self] id, url in
-            if let idx = terminalSessions.firstIndex(where: { $0.id == id }) {
-                terminalSessions[idx].currentCwd = url
-                saveTerminalTabState()
-            }
+            tabManager.updateTerminalCwd(id, to: url)
+            tabManager.saveTabState()
         }
         terminalEngine.onPendingDropped = { id, count, reason in
             NSLog("[PathDeck] dropped %d pending text(s) for session %@: %@",
@@ -133,9 +149,33 @@ struct ContentView: View {
     @ViewBuilder
     private func workspaceContent(geometry: GeometryProxy) -> some View {
         VStack(spacing: 0) {
-            PathBarView(segments: model.pathSegments) { url in
-                model.navigate(to: url)
+            FileTabBar(
+                tabs: tabManager.fileTabs,
+                activeTabID: tabManager.activeFileTabID,
+                tabModels: tabManager.workspaceModels,
+                onSelect: { tabManager.switchTab(to: $0) },
+                onClose: { closeFileTab($0) },
+                onNewTab: { newFileTab() },
+                onRename: { tabManager.renameTab($0, to: $1) }
+            )
+
+            if tabManager.activeTabMode == .finderFirst {
+                finderFirstContent(geometry: geometry)
+            } else {
+                terminalFirstContent()
             }
+        }
+    }
+
+    @ViewBuilder
+    private func finderFirstContent(geometry: GeometryProxy) -> some View {
+        if let model {
+            PathBarView(
+                segments: model.pathSegments,
+                anchorCwd: tabManager.activeTab?.terminalAnchorCwd,
+                currentURL: model.currentURL,
+                onNavigate: { model.navigate(to: $0) }
+            )
 
             if model.isSearching {
                 Divider()
@@ -163,7 +203,7 @@ struct ContentView: View {
                     revealSelection: model.revealSelection,
                     onOpen: { model.enter($0) },
                     onSort: { column, ascending in
-                        model.applySort(column: column, ascending: ascending)
+                        tabManager.applySort(column: column, ascending: ascending)
                     },
                     onSelectionChange: { items in
                         model.selectedURLs = items.map(\.url)
@@ -191,8 +231,7 @@ struct ContentView: View {
                 }
             }
 
-            // Bottom panel
-            if model.isBottomPanelVisible {
+            if tabManager.activeTabTerminalVisible {
                 TerminalDividerView(
                     height: $terminalHeight,
                     minHeight: terminalMinHeight,
@@ -201,23 +240,24 @@ struct ContentView: View {
                 )
 
                 BottomPanelBar(
-                    terminalSessions: $terminalSessions,
-                    activeTerminalID: $activeTerminalID,
+                    sessions: tabManager.activeTabSessions,
+                    activeTerminalID: tabManager.activeTerminalID,
+                    onSelect: { tabManager.setActiveTerminal($0) },
                     onNewTerminalTab: { createTerminalTab() },
                     onCloseTerminalTab: { closeTerminalTab($0) },
+                    onRename: { tabManager.renameTerminalSession($0, to: $1) },
                     onNavigateToCwd: { url in model.navigate(to: url) }
                 )
             }
 
-            // Terminal content (keep in view tree for session preservation)
-            if !terminalSessions.isEmpty {
+            if !tabManager.allTerminalSessionIDs.isEmpty {
                 TerminalPanelView(
-                    activeSessionID: activeTerminalID,
-                    sessionIDs: Set(terminalSessions.map(\.id)),
+                    activeSessionID: tabManager.activeTerminalID,
+                    sessionIDs: tabManager.allTerminalSessionIDs,
                     engine: terminalEngine,
-                    isActive: model.isBottomPanelVisible
+                    isActive: tabManager.activeTabTerminalVisible
                 )
-                .frame(height: model.isBottomPanelVisible ? terminalHeight : 0)
+                .frame(height: tabManager.activeTabTerminalVisible ? terminalHeight : 0)
                 .clipped()
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     handleTerminalDrop(providers)
@@ -226,32 +266,64 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func terminalFirstContent() -> some View {
+        HStack(spacing: 0) {
+            VerticalTerminalTabBar(
+                sessions: tabManager.activeTabSessions,
+                activeID: tabManager.activeTerminalID,
+                onSelect: { tabManager.setActiveTerminal($0) },
+                onNewTab: { createTerminalTab() },
+                onCloseTab: { closeTerminalTab($0) },
+                onRename: { tabManager.renameTerminalSession($0, to: $1) },
+                onNavigateToCwd: { url in model?.navigate(to: url) }
+            )
+
+            Divider()
+
+            if !tabManager.allTerminalSessionIDs.isEmpty {
+                TerminalPanelView(
+                    activeSessionID: tabManager.activeTerminalID,
+                    sessionIDs: tabManager.allTerminalSessionIDs,
+                    engine: terminalEngine,
+                    isActive: true
+                )
+                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                    handleTerminalDrop(providers)
+                }
+            } else {
+                Color.clear
+            }
+        }
+    }
+
     // MARK: - External Entry (URL Scheme / Services / Open With)
 
-    /// 消费 `AppRouter` 的一次性令牌，把外部入口归一为 model 导航。
-    /// onAppear 与 `router.pending` 变化各调一次，覆盖冷启动唤起与运行时唤起两种时序，consume 幂等。
-    /// 消费同步（防双重处理），处理异步（脱离 SwiftUI view update cycle，否则 NSAlert.runModal
-    /// 在 onChange 内开嵌套 run loop 会阻塞 UI，revealSelection 的状态传播也会与 updateNSView 竞争）。
     private func handleExternalRoute() {
         guard let route = router.consume() else { return }
         DispatchQueue.main.async {
             switch route {
             case .open(let url):
-                model.navigate(to: url)
+                model?.navigate(to: url)
                 RecentFolders.shared.add(url)
             case .reveal(let urls):
-                model.reveal(urls)
+                model?.reveal(urls)
             case .terminal(let url, let requireConfirmation):
                 if requireConfirmation, !confirmOpenTerminal(at: url) { return }
-                model.navigate(to: url)
+                if let existingTab = tabManager.findTabByAnchorOrCwd(url) {
+                    tabManager.switchTab(to: existingTab)
+                } else {
+                    tabManager.createTab(at: url)
+                }
                 RecentFolders.shared.add(url)
-                createTerminalTab()
-                if !model.isBottomPanelVisible { model.isBottomPanelVisible = true }
+                createTerminalTab(cwd: url)
+                if !tabManager.activeTabTerminalVisible {
+                    tabManager.activeTabTerminalVisible = true
+                }
             }
         }
     }
 
-    /// 外部请求在指定目录打开终端时的确认对话框。返回 true 表示用户允许。
     private func confirmOpenTerminal(at url: URL) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -262,31 +334,87 @@ struct ContentView: View {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
+    // MARK: - ⌘W Monitor
+
+    private func installCloseTabMonitor() {
+        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "w" else {
+                return event
+            }
+            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView,
+               let sessionID = tabManager.activeTerminalID {
+                closeTerminalTab(sessionID)
+                return nil
+            }
+            guard tabManager.fileTabs.count > 1,
+                  let id = tabManager.activeFileTabID else {
+                return event
+            }
+            closeFileTab(id)
+            return nil
+        }
+    }
+
+    private func removeCloseTabMonitor() {
+        if let monitor = closeTabMonitor {
+            NSEvent.removeMonitor(monitor)
+            closeTabMonitor = nil
+        }
+    }
+
+    // MARK: - File Tab Management
+
+    private func newFileTab() {
+        let cwd = model?.currentURL ?? FileManager.default.homeDirectoryForCurrentUser
+        tabManager.createTab(at: cwd)
+    }
+
+    private func closeFileTab(_ id: UUID) {
+        if tabManager.fileTabs.count <= 1 {
+            NSApp.keyWindow?.close()
+            return
+        }
+        let tab = tabManager.fileTabs.first { $0.id == id }
+        if let tab {
+            for sessionID in tab.terminalSessionIDs {
+                terminalEngine.closeSession(sessionID)
+            }
+        }
+        tabManager.closeTab(id)
+    }
+
     // MARK: - Terminal Tab Management
 
-    private func createTerminalTab() {
-        let id = terminalEngine.createSession(cwd: model.currentURL)
-        let index = terminalSessions.count + 1
-        let title = index == 1 ? "Terminal" : "Terminal \(index)"
-        terminalSessions.append(TerminalSession(id: id, title: title, cwd: model.currentURL))
-        activeTerminalID = id
+    private func createTerminalTab(cwd override: URL? = nil) {
+        guard let tabID = tabManager.activeFileTabID,
+              let tab = tabManager.activeTab else { return }
+
+        let cwd = override ?? tab.terminalAnchorCwd ?? model?.currentURL
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let id = terminalEngine.createSession(cwd: cwd)
+        let count = tab.terminalSessionIDs.count + 1
+        let title = count == 1 ? "Terminal" : "Terminal \(count)"
+        let session = TerminalSession(id: id, title: title, cwd: cwd)
+        tabManager.addTerminalSession(session, to: tabID)
     }
 
     private func closeTerminalTab(_ id: UUID) {
+        let ownerTab = tabManager.ownerTabID(for: id)
         terminalEngine.closeSession(id)
-        terminalSessions.removeAll { $0.id == id }
-        if activeTerminalID == id {
-            activeTerminalID = terminalSessions.last?.id
-        }
-        if terminalSessions.isEmpty {
-            model.isBottomPanelVisible = false
+        tabManager.removeTerminalSession(id)
+
+        if ownerTab == tabManager.activeFileTabID,
+           tabManager.activeTabSessions.isEmpty,
+           tabManager.activeTabMode == .finderFirst {
+            tabManager.activeTabTerminalVisible = false
         }
     }
 
     // MARK: - Terminal Input
 
     private func handleTerminalDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let activeID = activeTerminalID else { return false }
+        guard let activeID = tabManager.activeTerminalID else { return false }
         let lock = NSLock()
         var urls: [URL] = []
         let group = DispatchGroup()
@@ -313,11 +441,11 @@ struct ContentView: View {
     }
 
     private func sendPathToTerminal(_ urls: [URL]) {
-        if !model.isBottomPanelVisible {
-            model.isBottomPanelVisible = true
-            if terminalSessions.isEmpty { createTerminalTab() }
+        if !tabManager.activeTabTerminalVisible {
+            tabManager.activeTabTerminalVisible = true
+            if tabManager.activeTabSessions.isEmpty { createTerminalTab() }
         }
-        guard let activeID = activeTerminalID else { return }
+        guard let activeID = tabManager.activeTerminalID else { return }
         let escaped = ShellEscape.escapeMultiple(
             urls.map { $0.path(percentEncoded: false) }
         )
@@ -333,9 +461,6 @@ struct ContentView: View {
         hasRestoredState = true
 
         let defaults = UserDefaults.standard
-        if defaults.object(forKey: Self.bottomPanelVisibleKey) != nil {
-            model.isBottomPanelVisible = defaults.bool(forKey: Self.bottomPanelVisibleKey)
-        }
         if defaults.object(forKey: Self.bottomPanelHeightKey) != nil {
             terminalHeight = CGFloat(defaults.double(forKey: Self.bottomPanelHeightKey))
         }
@@ -343,52 +468,30 @@ struct ContentView: View {
             isPreviewPaneVisible = defaults.bool(forKey: Self.previewPaneVisibleKey)
         }
 
-        restoreTerminalTabs()
-    }
-
-    private func restoreTerminalTabs() {
-        guard let data = UserDefaults.standard.data(forKey: Self.terminalTabsKey),
-              let states = try? JSONDecoder().decode([TerminalTabState].self, from: data),
-              !states.isEmpty else { return }
-
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        for state in states {
-            let cwdURL = URL(fileURLWithPath: state.cwdPath)
-            var isDir: ObjCBool = false
-            let cwd = FileManager.default.fileExists(atPath: state.cwdPath, isDirectory: &isDir) && isDir.boolValue
-                ? cwdURL : home
-            let id = terminalEngine.createSession(cwd: cwd)
-            terminalSessions.append(TerminalSession(id: id, title: state.title, cwd: cwd))
-            if activeTerminalID == nil { activeTerminalID = id }
-        }
-    }
-
-    private func saveTerminalTabState() {
-        let states = terminalSessions.map {
-            TerminalTabState(title: $0.title, cwdPath: $0.currentCwd.path(percentEncoded: false))
-        }
-        if let data = try? JSONEncoder().encode(states) {
-            UserDefaults.standard.set(data, forKey: Self.terminalTabsKey)
-        }
+        tabManager.restoreTabState(terminalEngine: terminalEngine)
     }
 }
 
 // MARK: - Bottom Panel Bar
 
 private struct BottomPanelBar: View {
-    @Binding var terminalSessions: [TerminalSession]
-    @Binding var activeTerminalID: UUID?
+    var sessions: [TerminalSession]
+    var activeTerminalID: UUID?
+    var onSelect: (UUID) -> Void
     var onNewTerminalTab: () -> Void
     var onCloseTerminalTab: (UUID) -> Void
+    var onRename: (UUID, String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
             TerminalTabBar(
-                sessions: $terminalSessions,
-                activeID: $activeTerminalID,
+                sessions: sessions,
+                activeID: activeTerminalID,
+                onSelect: onSelect,
                 onNewTab: onNewTerminalTab,
                 onCloseTab: onCloseTerminalTab,
+                onRename: onRename,
                 onNavigateToCwd: onNavigateToCwd
             )
         }
@@ -431,11 +534,33 @@ private struct TerminalDividerView: View {
 
 private struct PathBarView: View {
     var segments: [(name: String, url: URL)]
+    var anchorCwd: URL?
+    var currentURL: URL
     var onNavigate: (URL) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
+                if let anchor = anchorCwd, anchor.standardizedFileURL != currentURL.standardizedFileURL {
+                    Button {
+                        onNavigate(anchor)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "anchor")
+                                .font(.system(size: 9))
+                            Text(anchor.lastPathComponent)
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("回到锚定目录: \(anchor.path(percentEncoded: false))")
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.quaternary)
+                }
+
                 ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                     if index > 0 {
                         Image(systemName: "chevron.right")
@@ -466,15 +591,27 @@ private struct PathBarView: View {
 // MARK: - State Persistence Modifier
 
 private struct StatePersistenceModifier: ViewModifier {
-    let terminalSessions: [TerminalSession]
+    let tabManager: TabManager
     let terminalHeight: CGFloat
     let isPreviewPaneVisible: Bool
-    let onSaveTerminalTabs: () -> Void
+    let onSaveTabState: () -> Void
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: terminalSessions.count) { _, _ in
-                onSaveTerminalTabs()
+            .onChange(of: tabManager.allTerminalSessionIDs.count) { _, _ in
+                onSaveTabState()
+            }
+            .onChange(of: tabManager.fileTabs.count) { _, _ in
+                onSaveTabState()
+            }
+            .onChange(of: tabManager.activeFileTabID) { _, _ in
+                onSaveTabState()
+            }
+            .onChange(of: tabManager.activeTabTerminalVisible) { _, _ in
+                onSaveTabState()
+            }
+            .onChange(of: tabManager.activeTabMode) { _, _ in
+                onSaveTabState()
             }
             .onChange(of: terminalHeight) { _, newValue in
                 UserDefaults.standard.set(Double(newValue), forKey: "bottomPanelHeight")

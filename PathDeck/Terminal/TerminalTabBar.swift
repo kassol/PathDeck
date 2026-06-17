@@ -1,20 +1,23 @@
 import SwiftUI
 
 struct TerminalTabBar: View {
-    @Binding var sessions: [TerminalSession]
-    @Binding var activeID: UUID?
+    var sessions: [TerminalSession]
+    var activeID: UUID?
+    var onSelect: (UUID) -> Void
     var onNewTab: () -> Void
     var onCloseTab: (UUID) -> Void
+    var onRename: (UUID, String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach($sessions) { $session in
+            ForEach(sessions) { session in
                 TabItem(
-                    session: $session,
+                    session: session,
                     isActive: session.id == activeID,
-                    onSelect: { activeID = session.id },
+                    onSelect: { onSelect(session.id) },
                     onClose: { onCloseTab(session.id) },
+                    onRename: { onRename(session.id, $0) },
                     onNavigateToCwd: onNavigateToCwd
                 )
             }
@@ -37,10 +40,11 @@ struct TerminalTabBar: View {
 // MARK: - Tab Item
 
 private struct TabItem: View {
-    @Binding var session: TerminalSession
+    let session: TerminalSession
     let isActive: Bool
     var onSelect: () -> Void
     var onClose: () -> Void
+    var onRename: (String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
 
     @State private var isEditing = false
@@ -102,7 +106,7 @@ private struct TabItem: View {
     private func commitRename() {
         let trimmed = editingTitle.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty {
-            session.title = trimmed
+            onRename(trimmed)
         }
         isEditing = false
     }

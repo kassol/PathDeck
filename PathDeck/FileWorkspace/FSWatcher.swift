@@ -3,7 +3,7 @@ import Foundation
 nonisolated final class FSWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private var watchedDirectory: String?
-    private let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
+    let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
     private let handler: @Sendable () -> Void
 
     private var dirty = false
@@ -70,6 +70,14 @@ nonisolated final class FSWatcher: @unchecked Sendable {
 
     deinit {
         stop()
+    }
+
+    func setWatchedDirectory(_ url: URL) {
+        var dirPath = url.path(percentEncoded: false)
+        if dirPath.hasSuffix("/") && dirPath.count > 1 {
+            dirPath = String(dirPath.dropLast())
+        }
+        queue.sync { watchedDirectory = dirPath }
     }
 
     func handleRawEvents(paths: [String], flags: [FSEventStreamEventFlags]) {

@@ -17,6 +17,7 @@ struct PathDeckApp: App {
         }
         .commands {
             CLICommands()
+            TabCommands()
             TerminalCommands()
             FileCommands()
             ViewCommands()
@@ -88,25 +89,67 @@ private struct CLICommands: Commands {
     }
 }
 
+/// 文件 Tab 管理菜单命令。
+private struct TabCommands: Commands {
+    @FocusedValue(\.tabManager) private var tabManager
+
+    var body: some Commands {
+        CommandMenu("标签页") {
+            Button("新建标签页") {
+                guard let tm = tabManager, let model = tm.activeModel else { return }
+                tm.createTab(at: model.currentURL)
+            }
+            .keyboardShortcut("t")
+
+            Divider()
+
+            Button("下一个标签页") {
+                tabManager?.switchToNextTab()
+            }
+            .keyboardShortcut(.tab, modifiers: .control)
+
+            Button("上一个标签页") {
+                tabManager?.switchToPreviousTab()
+            }
+            .keyboardShortcut(.tab, modifiers: [.control, .shift])
+
+            Divider()
+
+            ForEach(1...9, id: \.self) { n in
+                Button("标签页 \(n)") {
+                    tabManager?.switchToTabByIndex(n - 1)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+            }
+        }
+    }
+}
+
 /// 终端菜单命令。
 private struct TerminalCommands: Commands {
     @Environment(\.openWindow) private var openWindow
-    @FocusedValue(\.workspaceModel) private var model
+    @FocusedValue(\.tabManager) private var tabManager
     @FocusedValue(\.sendPathAction) private var sendPathAction
+    @FocusedValue(\.createTerminalAction) private var createTerminal
 
     var body: some Commands {
         CommandMenu("终端") {
-            Button("切换底部面板") {
-                model?.isBottomPanelVisible.toggle()
+            Button("切换终端") {
+                tabManager?.toggleTerminalVisibility()
             }
             .keyboardShortcut("`", modifiers: .control)
 
+            Button("新建终端") {
+                createTerminal?()
+            }
+            .keyboardShortcut("n", modifiers: [.control, .shift])
+
             Button("发送路径到终端") {
-                guard let urls = model?.selectedURLs, !urls.isEmpty else { return }
+                guard let urls = tabManager?.activeModel?.selectedURLs, !urls.isEmpty else { return }
                 sendPathAction?(urls)
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(model?.selectedURLs.isEmpty ?? true)
+            .disabled(tabManager?.activeModel?.selectedURLs.isEmpty ?? true)
 
             Divider()
 
@@ -169,7 +212,7 @@ private struct FileCommands: Commands {
 
 /// 显示菜单命令：隐藏文件切换 + 复制路径。
 private struct ViewCommands: Commands {
-    @FocusedValue(\.workspaceModel) private var model
+    @FocusedValue(\.tabManager) private var tabManager
     @FocusedValue(\.togglePreviewPaneAction) private var togglePreviewPane
 
     var body: some Commands {
@@ -179,20 +222,20 @@ private struct ViewCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
 
-            Button(model?.showHidden == true ? "隐藏隐藏文件" : "显示隐藏文件") {
-                model?.toggleHidden()
+            Button(tabManager?.showHidden == true ? "隐藏隐藏文件" : "显示隐藏文件") {
+                tabManager?.toggleHidden()
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .textEditing) {
             Button("查找…") {
-                model?.isSearching = true
+                tabManager?.activeModel?.isSearching = true
             }
             .keyboardShortcut("f")
         }
         CommandGroup(after: .pasteboard) {
             Button("复制当前路径") {
-                model?.copyCurrentPath()
+                tabManager?.activeModel?.copyCurrentPath()
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
         }
