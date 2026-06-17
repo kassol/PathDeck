@@ -3,8 +3,6 @@ import AppKit
 
 @main
 struct PathDeckApp: App {
-    static let terminalWindowID = "terminal-smoke"
-
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -26,13 +24,6 @@ struct PathDeckApp: App {
         Settings {
             SettingsView()
         }
-
-        // S2 冒烟：独立终端窗口，与文件列表主窗口隔离。
-        Window("Terminal (Smoke)", id: Self.terminalWindowID) {
-            TerminalSmokeView()
-                .frame(minWidth: 640, minHeight: 400)
-        }
-        .defaultSize(width: 800, height: 500)
     }
 }
 
@@ -94,8 +85,8 @@ private struct TabCommands: Commands {
     @FocusedValue(\.tabManager) private var tabManager
 
     var body: some Commands {
-        CommandMenu("标签页") {
-            Button("新建标签页") {
+        CommandMenu("Tabs") {
+            Button("New Tab") {
                 guard let tm = tabManager, let model = tm.activeModel else { return }
                 tm.createTab(at: model.currentURL)
             }
@@ -103,12 +94,12 @@ private struct TabCommands: Commands {
 
             Divider()
 
-            Button("下一个标签页") {
+            Button("Next Tab") {
                 tabManager?.switchToNextTab()
             }
             .keyboardShortcut(.tab, modifiers: .control)
 
-            Button("上一个标签页") {
+            Button("Previous Tab") {
                 tabManager?.switchToPreviousTab()
             }
             .keyboardShortcut(.tab, modifiers: [.control, .shift])
@@ -116,7 +107,7 @@ private struct TabCommands: Commands {
             Divider()
 
             ForEach(1...9, id: \.self) { n in
-                Button("标签页 \(n)") {
+                Button("Tab \(n)") {
                     tabManager?.switchToTabByIndex(n - 1)
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
@@ -127,36 +118,28 @@ private struct TabCommands: Commands {
 
 /// 终端菜单命令。
 private struct TerminalCommands: Commands {
-    @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.tabManager) private var tabManager
     @FocusedValue(\.sendPathAction) private var sendPathAction
     @FocusedValue(\.createTerminalAction) private var createTerminal
 
     var body: some Commands {
-        CommandMenu("终端") {
-            Button("切换终端") {
+        CommandMenu("Terminal") {
+            Button("Toggle Terminal") {
                 tabManager?.toggleTerminalVisibility()
             }
             .keyboardShortcut("`", modifiers: .control)
 
-            Button("新建终端") {
+            Button("New Terminal") {
                 createTerminal?()
             }
             .keyboardShortcut("n", modifiers: [.control, .shift])
 
-            Button("发送路径到终端") {
+            Button("Send Path to Terminal") {
                 guard let urls = tabManager?.activeModel?.selectedURLs, !urls.isEmpty else { return }
                 sendPathAction?(urls)
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
             .disabled(tabManager?.activeModel?.selectedURLs.isEmpty ?? true)
-
-            Divider()
-
-            Button("打开终端（冒烟）") {
-                openWindow(id: PathDeckApp.terminalWindowID)
-            }
-            .keyboardShortcut("t", modifiers: [.control, .option, .command])
         }
     }
 }
@@ -167,15 +150,15 @@ private struct FileCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("打开文件夹…") {
+            Button("Open Folder…") {
                 model?.openFolder()
             }
             .keyboardShortcut("o")
 
-            Menu("打开最近文件夹") {
+            Menu("Open Recent Folder") {
                 let recent = RecentFolders.shared.items
                 if recent.isEmpty {
-                    Text("无最近记录")
+                    Text("No Recent Items")
                 } else {
                     ForEach(recent, id: \.self) { url in
                         Button(abbreviatedPath(url)) {
@@ -183,7 +166,7 @@ private struct FileCommands: Commands {
                         }
                     }
                     Divider()
-                    Button("清除菜单") {
+                    Button("Clear Menu") {
                         RecentFolders.shared.clear()
                     }
                 }
@@ -191,13 +174,13 @@ private struct FileCommands: Commands {
 
             Divider()
 
-            Button("新建文件夹") {
+            Button("New Folder") {
                 model?.newFolder()
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
-        CommandMenu("文件操作") {
-            Button("移到废纸篓") {
+        CommandMenu("File Actions") {
+            Button("Move to Trash") {
                 model?.trashItems()
             }
             .keyboardShortcut(.delete, modifiers: .command)
@@ -216,25 +199,25 @@ private struct ViewCommands: Commands {
     @FocusedValue(\.togglePreviewPaneAction) private var togglePreviewPane
 
     var body: some Commands {
-        CommandMenu("显示") {
-            Button("切换预览面板") {
+        CommandMenu("View") {
+            Button("Toggle Preview Pane") {
                 togglePreviewPane?()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
 
-            Button(tabManager?.showHidden == true ? "隐藏隐藏文件" : "显示隐藏文件") {
+            Button(LocalizedStringKey(tabManager?.showHidden == true ? "Hide Hidden Files" : "Show Hidden Files")) {
                 tabManager?.toggleHidden()
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .textEditing) {
-            Button("查找…") {
+            Button("Find…") {
                 tabManager?.activeModel?.isSearching = true
             }
             .keyboardShortcut("f")
         }
         CommandGroup(after: .pasteboard) {
-            Button("复制当前路径") {
+            Button("Copy Current Path") {
                 tabManager?.activeModel?.copyCurrentPath()
             }
             .keyboardShortcut("c", modifiers: [.command, .option])

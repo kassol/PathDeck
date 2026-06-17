@@ -19,9 +19,7 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 - `TerminalPanelView.swift` — `NSViewRepresentable` 多 session 容器：container NSView + `isHidden` 切换活跃 surface + 焦点跟随。传入 allTerminalSessionIDs（跨 Tab）避免切 Tab 时误删其他 Tab 的 surface subview
 - `GhosttyApp.swift` — 进程级 runtime 单例：`ghostty_init` + `app_new` + runtime callbacks + `wakeup`→合并主队列 `app_tick` + `action_cb` 处理 `GHOSTTY_ACTION_PWD`/`SET_TITLE`（多 handler 注册）/`SHOW_CHILD_EXITED`（子进程退出 → post `ghosttySurfaceDidClose` 关 tab + `return true` 抑制 "press any key" overlay）
 - `GhosttySurfaceView.swift` — `CAMetalLayer`-backed `NSView`：surface 生命周期 + 尺寸/缩放/display 同步 + 键盘转发 + `initialCwd` 可配置 + `onSurfaceReady` 回调（`createSurface` 成功后触发）+ `onSurfaceFailed` 回调（app 未初始化 / `ghostty_surface_new` 返回 nil 时触发，供 engine 立即丢弃 pending）+ 读取 Settings（shell/font size）+ shell integration env vars 注入
-- `TerminalSmokeView.swift` — `NSViewRepresentable` 包装，供独立冒烟窗口承载（S2 遗留，保留作调试入口）
-
-入口：Finder-first 模式底部 Terminal Panel + Terminal-first 模式全屏终端（⌃\` 三态循环切换），每个 FileTab 独立的终端 session 组 + anchor cwd 绑定；独立冒烟窗口（⌃⌥⌘T）。
+入口：Finder-first 模式底部 Terminal Panel + Terminal-first 模式全屏终端（⌃\` 三态循环切换），每个 FileTab 独立的终端 session 组 + anchor cwd 绑定。
 
 ## 构建前置
 
@@ -40,12 +38,12 @@ S2 完成冒烟验证；S8 补齐协议抽象并将终端嵌入主窗口底部�
 
 ## 依赖关系
 
-依赖 GhosttyKit（vendor xcframework）；被 `ContentView`（终端面板）和 `PathDeckApp`（冒烟窗口）引用。`ContentView` 通过 `TerminalEngine` 协议间接依赖，不直接 `import GhosttyKit`。
+依赖 GhosttyKit（vendor xcframework）；被 `ContentView`（终端面板）引用，通过 `TerminalEngine` 协议间接依赖，不直接 `import GhosttyKit`。
 
 ## 验证
 
 - 自动：`PathDeckTests/GhosttyLinkTests`（`ghostty_info()` 链接冒烟）+ `build`。
-- GUI 冒烟（渲染 + 键盘回显）人工在 Xcode 走查，见 `docs/plans/2026-06-13-s2-libghostty-smoke.md` §目标与验证标准。
+- GUI 验证（渲染 + 键盘回显）人工在 Xcode Run 主窗口终端面板走查。
 
 ## 变更日志
 

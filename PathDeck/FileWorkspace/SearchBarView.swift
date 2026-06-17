@@ -7,7 +7,7 @@ struct SearchBarView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
-        field.placeholderString = "搜索文件名"
+        field.placeholderString = String(localized: "Search file name")
         field.delegate = context.coordinator
         field.focusRingType = .none
         field.translatesAutoresizingMaskIntoConstraints = false

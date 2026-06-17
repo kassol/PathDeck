@@ -46,7 +46,7 @@ struct FSWatcherTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let counter = CallCounter()
-        let watcher = FSWatcher { counter.increment() }
+        let watcher = FSWatcher { _ in counter.increment() }
         watcher.setWatchedDirectory(tmp)
 
         watcher.queue.sync {
@@ -64,7 +64,7 @@ struct FSWatcherTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let counter = CallCounter()
-        let watcher = FSWatcher { counter.increment() }
+        let watcher = FSWatcher { _ in counter.increment() }
         watcher.setWatchedDirectory(tmp)
 
         watcher.queue.sync {
@@ -82,7 +82,7 @@ struct FSWatcherTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let counter = CallCounter()
-        let watcher = FSWatcher { counter.increment() }
+        let watcher = FSWatcher { _ in counter.increment() }
         watcher.setWatchedDirectory(tmp)
 
         watcher.queue.sync {
@@ -95,6 +95,35 @@ struct FSWatcherTests {
         #expect(counter.count == 0)
     }
 
+    @Test func expandedSubdirectoryEventIsMatched() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+
+        var capturedDirs: Set<String> = []
+        let semaphore = DispatchSemaphore(value: 0)
+        let watcher = FSWatcher { dirs in
+            capturedDirs = dirs
+            semaphore.signal()
+        }
+        watcher.setWatchedDirectory(tmp)
+        watcher.setExpandedDirectories([sub])
+
+        let subPath = watchedPath(sub)
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: [subPath + "/child.txt"],
+                flags: [Self.fileFlag]
+            )
+        }
+
+        let result = semaphore.wait(timeout: .now() + 3.0)
+        #expect(result == .success)
+        #expect(capturedDirs.contains(subPath))
+    }
+
     // MARK: - Coalesce test (no real stream, semaphore for determinism)
 
     @Test func rapidEventsCoalesceToSingleCall() throws {
@@ -103,7 +132,7 @@ struct FSWatcherTests {
 
         let semaphore = DispatchSemaphore(value: 0)
         let counter = CallCounter()
-        let watcher = FSWatcher {
+        let watcher = FSWatcher { _ in
             counter.increment()
             semaphore.signal()
         }
@@ -123,6 +152,37 @@ struct FSWatcherTests {
         #expect(counter.count == 1)
     }
 
+    @Test func dirtyDirsContainsBothRootAndExpanded() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+
+        var capturedDirs: Set<String> = []
+        let semaphore = DispatchSemaphore(value: 0)
+        let watcher = FSWatcher { dirs in
+            capturedDirs = dirs
+            semaphore.signal()
+        }
+        watcher.setWatchedDirectory(tmp)
+        watcher.setExpandedDirectories([sub])
+
+        let base = watchedPath(tmp)
+        let subPath = watchedPath(sub)
+        watcher.queue.sync {
+            watcher.handleRawEvents(
+                paths: [base + "/root.txt", subPath + "/child.txt"],
+                flags: [Self.fileFlag, Self.fileFlag]
+            )
+        }
+
+        let result = semaphore.wait(timeout: .now() + 3.0)
+        #expect(result == .success)
+        #expect(capturedDirs.contains(base))
+        #expect(capturedDirs.contains(subPath))
+    }
+
     // MARK: - Stop tests (need real stream for stop() logic)
 
     @Test func stopFlushesWhenDirty() throws {
@@ -130,7 +190,7 @@ struct FSWatcherTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let counter = CallCounter()
-        let watcher = FSWatcher { counter.increment() }
+        let watcher = FSWatcher { _ in counter.increment() }
         watcher.watch(directory: tmp)
 
         watcher.queue.sync {
@@ -149,7 +209,7 @@ struct FSWatcherTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let counter = CallCounter()
-        let watcher = FSWatcher { counter.increment() }
+        let watcher = FSWatcher { _ in counter.increment() }
         watcher.watch(directory: tmp)
 
         watcher.queue.sync {

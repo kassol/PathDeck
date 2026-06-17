@@ -154,7 +154,7 @@ struct PreviewPane: View {
 
     private func fileKind(for url: URL) -> String {
         let values = try? url.resourceValues(forKeys: [.localizedTypeDescriptionKey])
-        return values?.localizedTypeDescription ?? "Document"
+        return values?.localizedTypeDescription ?? String(localized: "Document")
     }
 
     private func relativePath(for url: URL) -> String {
@@ -172,14 +172,14 @@ struct PreviewPane: View {
             atPath: currentDirectory.path(percentEncoded: false)
         ) else { return nil }
         let visible = contents.filter { !$0.hasPrefix(".") }
-        return "\(visible.count) items"
+        return String(localized: "\(visible.count) items")
     }
 }
 
 // MARK: - Subviews
 
 private struct MetadataRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
 
     var body: some View {
@@ -198,7 +198,7 @@ private struct MetadataRow: View {
 }
 
 private struct ActionButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let icon: String
     let action: () -> Void
 

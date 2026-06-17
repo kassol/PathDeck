@@ -130,7 +130,7 @@ struct SidebarView: View {
                         }
                         .tag(url.standardizedFileURL)
                         .contextMenu {
-                            Button("从侧栏移除") {
+                            Button("Remove from Sidebar") {
                                 pinnedFolders.remove(url)
                             }
                         }

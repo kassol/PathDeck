@@ -32,14 +32,14 @@ struct VerticalTerminalTabBar: View {
                 HStack {
                     Image(systemName: "plus")
                         .font(.system(size: 11))
-                    Text("终端")
+                    Text("Terminal")
                         .font(.system(size: 11))
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
             }
             .buttonStyle(.plain)
-            .help("新建终端")
+            .help("New Terminal")
         }
         .background(.bar)
     }

@@ -44,7 +44,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）+ FSWatcher（FSEvents 实时监听当前目录文件变化 → reload 列表）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）+ S23 VerticalTerminalTabBar（Terminal-first 模式垂直 Tab 列表）。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal。S16 新增 Settings 窗口（Terminal shell/font/scrollback）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。D1 Dogfood：移除 Change Journal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 迁入 FileWorkspace/ 简化为纯信号通知，移除 GRDB 依赖。S23 文件 Tab + Terminal-first 模式：FileTab 多目录并行 + TabManager 状态管理 + anchor cwd 一对多绑定 + Finder-first/Terminal-first per-tab 双模式 + ⌘W NSEvent local monitor 三层优先级。S24 UX Polish：文件列表列宽自适应（lastColumnOnlyAutoresizing）+ 垂直 tab bar 分隔线可拖动（100–300pt，持久化）+ 终端 tab 标题跟随 OSC title 自动更新（手动重命名优先、清空恢复）+ 移除 Reveal in Finder（替换为 Copy Path）。
+`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）+ FSWatcher（FSEvents 实时监听当前目录文件变化 → reload 列表）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）+ S23 VerticalTerminalTabBar（Terminal-first 模式垂直 Tab 列表）。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal。S16 新增 Settings 窗口（Terminal shell/font/scrollback）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。D1 Dogfood：移除 Change Journal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 迁入 FileWorkspace/ 简化为纯信号通知，移除 GRDB 依赖。S23 文件 Tab + Terminal-first 模式：FileTab 多目录并行 + TabManager 状态管理 + anchor cwd 一对多绑定 + Finder-first/Terminal-first per-tab 双模式 + ⌘W NSEvent local monitor 三层优先级。S26 目录就地折叠/展开：NSTableView→NSOutlineView 迁移 + OutlineDataSource 树状数据层 + FileNode 引用包装 + FSWatcher 多目录匹配。S25 i18n 多语言支持：`Localizable.xcstrings` String Catalog（en + zh-Hans），73 条目全量本地化。S24 UX Polish：文件列表列宽自适应（lastColumnOnlyAutoresizing）+ 垂直 tab bar 分隔线可拖动（100–300pt，持久化）+ 终端 tab 标题跟随 OSC title 自动更新（手动重命名优先、清空恢复）+ 移除 Reveal in Finder（替换为 Copy Path）。
 
 ```
 PathDeck/                  App 源码
@@ -89,7 +89,7 @@ design/                    设计稿源文件（standalone HTML，可浏览器�
 
 ### FileWorkspace 扩展路线
 
-**P2**：目录就地折叠/展开（从 `NSTableView` 迁移到 `NSOutlineView`，支持目录 inline expand/collapse，Finder 核心交互缺口）/ i18n 多语言支持（建立 `Localizable.xcstrings`，提取全量硬编码字符串，跟随系统语言，当前中英混杂）
+**P2**：~~目录就地折叠/展开~~（✅ S26 已完成）/ ~~i18n 多语言支持~~（✅ S25 已完成）
 
 ## 常用命令
 
@@ -166,12 +166,15 @@ xcodebuild -deleteComponent MetalToolchain
 - 里程碑式提交；commit message 用英文，第三方可读产出物中不出现个人称谓。
 - 改完跑构建 + 测试（涉及 synchronized group 资源变动时用 **clean build**：同名 resource 冲突等问题增量 build 不暴露）。
 - 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`、`Info.plist`。
+- i18n：用户可见字符串用英文 key，SwiftUI 直接写字面量（`Text("Key")`、`.help("Key")`）自动走 `LocalizedStringKey`；AppKit 用 `String(localized: "Key")`。翻译在 `Localizable.xcstrings`（String Catalog，en + zh-Hans）。条件文案用 `LocalizedStringKey(condition ? "A" : "B")`（三元返回 `String` 不走自动本地化）。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
 ## 变更日志
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-17 **S26 目录就地折叠/展开**：NSTableView→NSOutlineView 迁移。新增 `FileNode`（NSObject 引用包装，跨 reload identity 稳定）+ `OutlineDataSource`（树状数据层：根/子项加载、缓存、`refreshRoot` 保留展开状态精确刷新、`reloadChildren` 裁剪已删除嵌套缓存、per-level 排序）。`FileTableView` Coordinator 从 NSTableViewDataSource/Delegate 切换到 NSOutlineViewDataSource/Delegate。搜索模式回退 flat 列表（`FlatFileNode`），dirty reload 走全量刷新避免 invalid item。FSWatcher handler 签名从 `() -> Void` 改为 `(Set<String>) -> Void`（传 dirty 目录集合），新增 `setExpandedDirectories` 支持多目录匹配，模型层所有展开状态变更后同步 watcher scope。拖拽源显式设置 local + non-local operation mask。WorkspaceModel 持有 OutlineDataSource + `dirtyDirectories` 精确刷新信号。11 个 OutlineDataSource 单测 + 4 个 FSWatcher 多目录单测。
+- 2026-06-17 **S25 i18n**：建立 `Localizable.xcstrings` String Catalog（en 基语言 + zh-Hans），提取 11 个源文件的全量硬编码中文字符串为英文 key（SwiftUI 用 `LocalizedStringKey`、AppKit 用 `String(localized:)`），73 个翻译条目，跟随系统语言自动切换。pbxproj `knownRegions` 补 `zh-Hans`。
 - 2026-06-17 **S24 UX Polish**：文件列表列宽 `lastColumnOnlyAutoresizingStyle` + 各列 `minWidth`；垂直 tab bar 分隔线可拖动（`VerticalDividerView`，100–300pt，持久化）；终端 tab 标题跟随 OSC title 自动更新（`onTitleChange` + `isManuallyRenamed`，手动重命名优先，清空恢复；ShellIntegration 新增 OSC 2 title hooks：zsh precmd/preexec + bash PROMPT_COMMAND）；移除 Reveal in Finder，PreviewPane 替换为 Copy Path。
 - 2026-06-17 **S23 文件 Tab + Terminal-first 模式**：FileTab 多目录并行浏览 + TabManager @Observable 状态管理 + 终端 anchor cwd 一对多绑定 + Finder-first/Terminal-first per-tab 双模式 + FileTabBar（横向 28pt）+ VerticalTerminalTabBar（纵向，外部控制宽度）+ ⌘T/⌃Tab/⌃⇧Tab/⌘1-9 Tab 快捷键 + ⌘W NSEvent local monitor（终端焦点关终端/多 Tab 关 Tab/单 Tab 关窗口）+ ⌃` toggle 终端显隐 + ⌃⇧N 新建终端 + WorkspaceModel 多实例适配（移除全局 UserDefaults 持久化）+ Tab 列表 + 终端关联 + 模式全量持久化。
 - 2026-06-16 **D1 Kill Change Journal**（Dogfood 第一刀）：移除 ChangeJournal 全栈（10 源文件 + 8 测试 + Settings tab），FSWatcher 迁入 FileWorkspace/ 简化为纯信号，移除 GRDB 包依赖。底部面板仅保留 Terminal。

@@ -3,14 +3,16 @@ import Foundation
 nonisolated final class FSWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private var watchedDirectory: String?
+    /// 除根目录外额外监听的已展开子目录路径集合。
+    private var expandedDirectories: Set<String> = []
     let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
-    private let handler: @Sendable () -> Void
+    private let handler: @Sendable (Set<String>) -> Void
 
-    private var dirty = false
+    private var dirtyDirs: Set<String> = []
     private var flushWork: DispatchWorkItem?
     private static let coalesceWindow: TimeInterval = 0.5
 
-    init(handler: @escaping @Sendable () -> Void) {
+    init(handler: @escaping @Sendable (Set<String>) -> Void) {
         self.handler = handler
     }
 
@@ -21,7 +23,10 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         if dirPath.hasSuffix("/") && dirPath.count > 1 {
             dirPath = String(dirPath.dropLast())
         }
-        queue.sync { watchedDirectory = dirPath }
+        queue.sync {
+            watchedDirectory = dirPath
+            expandedDirectories = []
+        }
 
         var context = FSEventStreamContext(
             version: 0,
@@ -59,11 +64,13 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         self.stream = nil
         queue.sync {
             watchedDirectory = nil
+            expandedDirectories = []
             flushWork?.cancel()
             flushWork = nil
-            if dirty {
-                dirty = false
-                handler()
+            if !dirtyDirs.isEmpty {
+                let dirs = dirtyDirs
+                dirtyDirs.removeAll()
+                handler(dirs)
             }
         }
     }
@@ -77,23 +84,38 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         if dirPath.hasSuffix("/") && dirPath.count > 1 {
             dirPath = String(dirPath.dropLast())
         }
-        queue.sync { watchedDirectory = dirPath }
+        queue.sync {
+            watchedDirectory = dirPath
+            expandedDirectories = []
+        }
+    }
+
+    func setExpandedDirectories(_ urls: Set<URL>) {
+        let paths = Set(urls.map { url -> String in
+            var p = url.path(percentEncoded: false)
+            if p.hasSuffix("/") && p.count > 1 { p = String(p.dropLast()) }
+            return p
+        })
+        queue.sync { expandedDirectories = paths }
     }
 
     func handleRawEvents(paths: [String], flags: [FSEventStreamEventFlags]) {
         guard let watchedDir = watchedDirectory else { return }
+
+        var watchedDirs = expandedDirectories
+        watchedDirs.insert(watchedDir)
 
         for (path, flag) in zip(paths, flags) {
             let isFile = flag & UInt32(kFSEventStreamEventFlagItemIsFile) != 0
             let isDir = flag & UInt32(kFSEventStreamEventFlagItemIsDir) != 0
             guard isFile || isDir else { continue }
             let parent = (path as NSString).deletingLastPathComponent
-            guard parent == watchedDir else { continue }
-            dirty = true
-            break
+            if watchedDirs.contains(parent) {
+                dirtyDirs.insert(parent)
+            }
         }
 
-        guard dirty else { return }
+        guard !dirtyDirs.isEmpty else { return }
         scheduleFlush()
     }
 
@@ -107,9 +129,10 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     }
 
     private func flush() {
-        guard dirty else { return }
-        dirty = false
-        handler()
+        guard !dirtyDirs.isEmpty else { return }
+        let dirs = dirtyDirs
+        dirtyDirs.removeAll()
+        handler(dirs)
     }
 }
 

@@ -28,7 +28,7 @@ struct TerminalTabBar: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .help("新建终端")
+            .help("New Terminal")
 
             Spacer()
         }

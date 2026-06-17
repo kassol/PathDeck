@@ -13,8 +13,9 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
 | `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）。持有 FSWatcher 做目录实时刷新。多实例设计：每个 FileTab 独立一个实例，`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，不读 UserDefaults；sort/showHidden 由 TabManager 统一管理 |
-| `FSWatcher.swift` | FSEvents 文件变化监听器：watch 当前目录 → 0.5s coalesce 去抖 → 信号回调触发 reload；只监听一级子项变化 |
-| `FileTableView.swift` | `NSViewRepresentable` 包 `NSTableView`（`FileNSTableView` 子类），承载列表交互 + 右键菜单 + inline rename + Quick Look + 拖拽源（pasteboard writer） |
+| `FSWatcher.swift` | FSEvents 文件变化监听器：递归监听根目录 → 0.5s coalesce 去抖 → 传 dirty 目录集合回调；支持 `setExpandedDirectories` 匹配已展开子目录事件 |
+| `OutlineDataSource.swift` | `NSOutlineView` 树状数据层（`FileNode` 引用包装 + rootNodes/childrenCache + nodePool identity 复用 + per-level 排序 + 递归 clear）|
+| `FileTableView.swift` | `NSViewRepresentable` 包 `NSOutlineView`（`FileNSOutlineView` 子类），目录就地展开/折叠 + 搜索 flat 降级 + 右键菜单 + inline rename + Quick Look + 拖拽源 |
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
 | `ShellEscape.swift` | POSIX shell 路径转义纯函数（单引号包裹，Send Path to Terminal 用） |
@@ -22,7 +23,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 模块规范
 
-- 文件列表用 AppKit `NSTableView`，不用 SwiftUI `Table`：多选 / 拖拽（含 file promise）/ 就地重命名 / type-select / 万级实时增量刷新 / Column 视图等终局需求落在 SwiftUI 结构性弱区。SwiftUI 仅作壳与工具栏。
+- 文件列表用 AppKit `NSOutlineView`（S26 从 `NSTableView` 迁移），不用 SwiftUI `Table`：多选 / 拖拽 / 就地重命名 / type-select / 目录就地展开/折叠 / 万级实时增量刷新等需求落在 SwiftUI 结构性弱区。SwiftUI 仅作壳与工具栏。
 - 目录 IO 一律走 `DirectoryLister`（`nonisolated`），不在视图层直接读文件系统。
 - 列表数据流单向：`WorkspaceModel.items` → `FileTableView`；交互经 `onOpen` 回调 → model 改状态 → 重新 list。
 - 不在本模块散用 libghostty 符号；跨模块依赖经各自抽象层。
@@ -34,6 +35,8 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-17 S26 目录就地折叠/展开：NSTableView→NSOutlineView 迁移。新增 `OutlineDataSource.swift`（`FileNode` + 树状数据层 + `refreshRoot` 保留展开状态 + `reloadChildren` 裁剪嵌套删除缓存）。`FileTableView` 全面重写 Coordinator（NSOutlineViewDataSource/Delegate），搜索模式 `FlatFileNode` flat 降级 + dirty reload 全量刷新。`FSWatcher` handler 改为 `(Set<String>) -> Void` + `setExpandedDirectories`，模型层所有展开变更同步 watcher scope。拖拽源 local + non-local mask。`WorkspaceModel` 持有 `OutlineDataSource` + `dirtyDirectories` 精确刷新。
+- 2026-06-17 S25 i18n：全量硬编码中文字符串提取为英文 key + zh-Hans 翻译。`FileTableView` 列头 / 右键菜单、`WorkspaceModel` 新建文件夹名、`SearchBarView` 占位文本、`PreviewPane` 元数据标签均走 `String(localized:)` / `LocalizedStringKey`。
 - 2026-06-17 S24 UX Polish：`FileTableView` 列宽 `lastColumnOnlyAutoresizingStyle` + 各列 `minWidth`；移除右键菜单"在 Finder 中显示" + `menuRevealInFinder`；`PreviewPane` 移除 `onRevealInFinder` 参数，"Reveal in Finder" 按钮替换为 "Copy Path"。
 - 2026-06-17 S23 WorkspaceModel 多实例适配：移除 `defaults` 参数 + `lastFolderKey` + `isBottomPanelVisible` + didSet 持久化；`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，sort/showHidden 由 TabManager 统一管理和持久化。
 - 2026-06-16 D1 Kill Change Journal：移除 ChangeJournal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 简化后迁入本模块（纯信号回调，无事件分类），WorkspaceModel 剥离 ~10 属性 + ~7 方法，FileTableView 移除变化色点，PreviewPane 移除版本 section，移除 GRDB 依赖。

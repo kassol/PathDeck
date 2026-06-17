@@ -215,9 +215,10 @@ struct WorkspaceModelFileOpsTests {
         let model = makeModel(root: tmp)
         model.newFolder()
 
-        #expect(model.items.contains(where: { $0.name == "未命名文件夹" && $0.isDirectory }))
+        let baseName = String(localized: "untitled folder")
+        #expect(model.items.contains(where: { $0.name == baseName && $0.isDirectory }))
         #expect(FileManager.default.fileExists(
-            atPath: tmp.appendingPathComponent("未命名文件夹").path))
+            atPath: tmp.appendingPathComponent(baseName).path))
     }
 
     @Test func newFolderSetsPendingRenameURL() throws {
@@ -227,8 +228,9 @@ struct WorkspaceModelFileOpsTests {
         let model = makeModel(root: tmp)
         model.newFolder()
 
+        let baseName = String(localized: "untitled folder")
         #expect(model.pendingRenameURL != nil)
-        #expect(model.pendingRenameURL?.lastPathComponent == "未命名文件夹")
+        #expect(model.pendingRenameURL?.lastPathComponent == baseName)
         #expect(model.selectedURLs.count == 1)
     }
 
@@ -240,8 +242,9 @@ struct WorkspaceModelFileOpsTests {
         model.newFolder()
         model.newFolder()
 
-        #expect(model.items.contains(where: { $0.name == "未命名文件夹" }))
-        #expect(model.items.contains(where: { $0.name == "未命名文件夹 2" }))
+        let baseName = String(localized: "untitled folder")
+        #expect(model.items.contains(where: { $0.name == baseName }))
+        #expect(model.items.contains(where: { $0.name == "\(baseName) 2" }))
     }
 
     // MARK: - Copy Path

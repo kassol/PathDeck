@@ -147,22 +147,22 @@ struct WorkspaceModelTests {
     // MARK: - New Folder Name
 
     @Test func newFolderNameEmpty() {
-        let name = WorkspaceModel.newFolderName(in: [])
-        #expect(name == "未命名文件夹")
+        let name = WorkspaceModel.newFolderName(in: [], baseName: "untitled folder")
+        #expect(name == "untitled folder")
     }
 
     @Test func newFolderNameFirstConflict() {
-        let name = WorkspaceModel.newFolderName(in: ["未命名文件夹"])
-        #expect(name == "未命名文件夹 2")
+        let name = WorkspaceModel.newFolderName(in: ["untitled folder"], baseName: "untitled folder")
+        #expect(name == "untitled folder 2")
     }
 
     @Test func newFolderNameMultipleConflicts() {
-        let name = WorkspaceModel.newFolderName(in: ["未命名文件夹", "未命名文件夹 2", "未命名文件夹 3"])
-        #expect(name == "未命名文件夹 4")
+        let name = WorkspaceModel.newFolderName(in: ["untitled folder", "untitled folder 2", "untitled folder 3"], baseName: "untitled folder")
+        #expect(name == "untitled folder 4")
     }
 
     @Test func newFolderNameGapInSequence() {
-        let name = WorkspaceModel.newFolderName(in: ["未命名文件夹", "未命名文件夹 3"])
-        #expect(name == "未命名文件夹 2")
+        let name = WorkspaceModel.newFolderName(in: ["untitled folder", "untitled folder 3"], baseName: "untitled folder")
+        #expect(name == "untitled folder 2")
     }
 }

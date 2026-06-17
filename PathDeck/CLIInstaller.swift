@@ -7,8 +7,8 @@ enum CLIInstaller {
         guard let source = Bundle.main.url(forResource: "pathdeck", withExtension: nil) else {
             showAlert(
                 style: .critical,
-                message: "未找到命令行工具",
-                info: "App bundle 中缺少 pathdeck 二进制文件。请重新构建 PathDeck。"
+                message: String(localized: "Command line tool not found"),
+                info: String(localized: "The pathdeck binary is missing from the app bundle. Please rebuild PathDeck.")
             )
             return
         }
@@ -27,8 +27,8 @@ enum CLIInstaller {
             if fm.fileExists(atPath: installPath, isDirectory: &isDir), isDir.boolValue {
                 showAlert(
                     style: .critical,
-                    message: "安装失败",
-                    info: "\(installPath) 是一个目录，无法覆盖。请手动删除后重试。"
+                    message: String(localized: "Installation failed"),
+                    info: String(localized: "\(installPath) is a directory and cannot be overwritten. Please remove it manually and try again.")
                 )
                 return
             }
@@ -44,15 +44,15 @@ enum CLIInstaller {
 
             showAlert(
                 style: .informational,
-                message: "命令行工具已安装",
-                info: "已安装到 \(installPath)。在终端中输入 pathdeck 即可使用。"
+                message: String(localized: "Command line tool installed"),
+                info: String(localized: "Installed to \(installPath). Type pathdeck in Terminal to use it.")
             )
         } catch {
             let escaped = ShellEscape.escape(srcPath)
             showAlert(
                 style: .critical,
-                message: "安装失败",
-                info: "无法写入 \(installPath)。\n请在终端执行：\nsudo cp \(escaped) \(installPath) && sudo chmod 755 \(installPath)"
+                message: String(localized: "Installation failed"),
+                info: String(localized: "Cannot write to \(installPath).\nPlease run in Terminal:\nsudo cp \(escaped) \(installPath) && sudo chmod 755 \(installPath)")
             )
         }
     }

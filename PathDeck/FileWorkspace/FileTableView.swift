@@ -5,8 +5,11 @@ import UniformTypeIdentifiers
 
 struct FileTableView: NSViewRepresentable {
     var items: [FileItem]
+    var outlineDataSource: OutlineDataSource
+    var isSearching: Bool
+    /// FSWatcher dirty 信号，非 nil 时触发精确 reload。
+    var dirtyDirectories: Set<String>?
     var pendingRenameURL: URL?
-    /// 命令式选择信号：选中这组 URL 对应的行并滚动到首项（单项即长度 1）。消费后由 `onClearRevealSelection` 清空。
     var revealSelection: [URL]?
     var onOpen: (FileItem) -> Void
     var onSort: (String, Bool) -> Void
@@ -16,38 +19,43 @@ struct FileTableView: NSViewRepresentable {
     var onNewFolder: () -> Void
     var onClearPendingRename: () -> Void
     var onClearRevealSelection: () -> Void
+    var onClearDirtyDirectories: () -> Void
     var onSendPathToTerminal: ([URL]) -> Void
+    var onExpandCollapse: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let tableView = FileNSTableView()
-        tableView.dataSource = context.coordinator
-        tableView.delegate = context.coordinator
-        tableView.setDraggingSourceOperationMask(.copy, forLocal: false)
-        tableView.usesAlternatingRowBackgroundColors = true
-        tableView.allowsMultipleSelection = true
-        tableView.rowHeight = 22
-        tableView.style = .inset
-        tableView.target = context.coordinator
-        tableView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
+        let outlineView = FileNSOutlineView()
+        outlineView.dataSource = context.coordinator
+        outlineView.delegate = context.coordinator
+        outlineView.setDraggingSourceOperationMask(.copy, forLocal: true)
+        outlineView.setDraggingSourceOperationMask(.copy, forLocal: false)
+        outlineView.usesAlternatingRowBackgroundColors = true
+        outlineView.allowsMultipleSelection = true
+        outlineView.rowHeight = 22
+        outlineView.style = .inset
+        outlineView.indentationPerLevel = 16
+        outlineView.autosaveExpandedItems = false
+        outlineView.target = context.coordinator
+        outlineView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
         let coordinator = context.coordinator
-        tableView.onReturnKey = { [weak coordinator] row in
+        outlineView.onReturnKey = { [weak coordinator] row in
             coordinator?.beginRename(row: row)
         }
 
         let menu = NSMenu()
         menu.delegate = context.coordinator
         menu.autoenablesItems = false
-        tableView.menu = menu
+        outlineView.menu = menu
 
         let columns: [(id: String, title: String, width: CGFloat, minWidth: CGFloat)] = [
-            (Coordinator.nameColumn, "名称", 280, 120),
-            (Coordinator.dateColumn, "修改日期", 170, 100),
-            (Coordinator.sizeColumn, "大小", 90, 60),
-            (Coordinator.kindColumn, "类型", 150, 60),
+            (Coordinator.nameColumn, String(localized: "Name"), 280, 120),
+            (Coordinator.dateColumn, String(localized: "Date Modified"), 170, 100),
+            (Coordinator.sizeColumn, String(localized: "Size"), 90, 60),
+            (Coordinator.kindColumn, String(localized: "Kind"), 150, 60),
         ]
         for spec in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(spec.id))
@@ -55,17 +63,18 @@ struct FileTableView: NSViewRepresentable {
             column.width = spec.width
             column.minWidth = spec.minWidth
             column.sortDescriptorPrototype = NSSortDescriptor(key: spec.id, ascending: true)
-            tableView.addTableColumn(column)
+            outlineView.addTableColumn(column)
         }
-        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        outlineView.outlineTableColumn = outlineView.tableColumns.first
+        outlineView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
 
-        tableView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
-        tableView.setAccessibilityIdentifier("fileTable")
-        tableView.coordinator = context.coordinator
-        context.coordinator.tableView = tableView
+        outlineView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
+        outlineView.setAccessibilityIdentifier("fileTable")
+        outlineView.coordinator = context.coordinator
+        context.coordinator.outlineView = outlineView
 
         let scrollView = NSScrollView()
-        scrollView.documentView = tableView
+        scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         return scrollView
@@ -73,8 +82,11 @@ struct FileTableView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let coord = context.coordinator
-        let itemsChanged = coord.items != items
-        coord.items = items
+        let itemsChanged = coord.flatItems != items
+        let searchingChanged = coord.isSearching != isSearching
+        coord.flatItems = items
+        coord.outlineDataSource = outlineDataSource
+        coord.isSearching = isSearching
         coord.onOpen = onOpen
         coord.onSort = onSort
         coord.onSelectionChange = onSelectionChange
@@ -82,19 +94,36 @@ struct FileTableView: NSViewRepresentable {
         coord.onRename = onRename
         coord.onNewFolder = onNewFolder
         coord.onSendPathToTerminal = onSendPathToTerminal
+        coord.onExpandCollapse = onExpandCollapse
 
-        guard let tv = nsView.documentView as? NSTableView else { return }
-        if coord.editingRow < 0, itemsChanged {
-            tv.reloadData()
+        guard let ov = nsView.documentView as? NSOutlineView else { return }
+
+        if let dirtyDirs = dirtyDirectories, !dirtyDirs.isEmpty {
+            if coord.isSearching {
+                ov.reloadItem(nil, reloadChildren: true)
+            } else {
+                for dirPath in dirtyDirs {
+                    let url = URL(fileURLWithPath: dirPath)
+                    if let node = coord.findNodeByURL(url) {
+                        ov.reloadItem(node, reloadChildren: true)
+                    } else {
+                        ov.reloadItem(nil, reloadChildren: true)
+                    }
+                }
+            }
+            let clearDirty = onClearDirtyDirectories
+            DispatchQueue.main.async { clearDirty() }
+        } else if coord.editingRow < 0, (itemsChanged || searchingChanged) {
+            ov.reloadItem(nil, reloadChildren: true)
         }
 
         if let pendingURL = pendingRenameURL {
-            let itemsSnapshot = items
             let clearPending = onClearPendingRename
             DispatchQueue.main.async {
-                if let row = itemsSnapshot.firstIndex(where: { $0.url == pendingURL }) {
-                    tv.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                    tv.scrollRowToVisible(row)
+                let row = ov.row(forItem: coord.findNodeByURL(pendingURL))
+                if row >= 0 {
+                    ov.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    ov.scrollRowToVisible(row)
                     coord.beginRename(row: row)
                 }
                 clearPending()
@@ -102,27 +131,27 @@ struct FileTableView: NSViewRepresentable {
         }
 
         if let targets = revealSelection, !targets.isEmpty {
-            let itemsSnapshot = items
             let clearReveal = onClearRevealSelection
             DispatchQueue.main.async {
                 let rows = IndexSet(targets.compactMap { url in
-                    itemsSnapshot.firstIndex(where: { $0.url == url })
+                    let row = ov.row(forItem: coord.findNodeByURL(url))
+                    return row >= 0 ? row : nil
                 })
                 if !rows.isEmpty {
-                    tv.selectRowIndexes(rows, byExtendingSelection: false)
-                    if let firstRow = itemsSnapshot.firstIndex(where: { $0.url == targets[0] }) {
-                        tv.scrollRowToVisible(firstRow)
+                    ov.selectRowIndexes(rows, byExtendingSelection: false)
+                    if let firstRow = rows.first {
+                        ov.scrollRowToVisible(firstRow)
                     }
-                    tv.window?.makeFirstResponder(tv)
+                    ov.window?.makeFirstResponder(ov)
                 }
                 clearReveal()
             }
         }
     }
 
-    // MARK: - Custom NSTableView for key events + Quick Look ownership
+    // MARK: - Custom NSOutlineView for key events + Quick Look ownership
 
-    final class FileNSTableView: NSTableView {
+    final class FileNSOutlineView: NSOutlineView {
         var onReturnKey: ((Int) -> Void)?
         weak var coordinator: Coordinator?
 
@@ -158,7 +187,7 @@ struct FileTableView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate,
+    final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate,
                              NSMenuDelegate, NSTextFieldDelegate,
                              QLPreviewPanelDataSource, QLPreviewPanelDelegate {
         static let nameColumn = "name"
@@ -166,7 +195,9 @@ struct FileTableView: NSViewRepresentable {
         static let sizeColumn = "size"
         static let kindColumn = "kind"
 
-        var items: [FileItem]
+        var flatItems: [FileItem]
+        var outlineDataSource: OutlineDataSource
+        var isSearching: Bool
         var onOpen: (FileItem) -> Void
         var onSort: (String, Bool) -> Void
         var onSelectionChange: ([FileItem]) -> Void
@@ -174,7 +205,8 @@ struct FileTableView: NSViewRepresentable {
         var onRename: (URL, String) -> Bool
         var onNewFolder: () -> Void
         var onSendPathToTerminal: ([URL]) -> Void
-        weak var tableView: NSTableView?
+        var onExpandCollapse: () -> Void
+        weak var outlineView: NSOutlineView?
 
         var editingRow: Int = -1
 
@@ -191,7 +223,9 @@ struct FileTableView: NSViewRepresentable {
         }()
 
         init(parent: FileTableView) {
-            self.items = parent.items
+            self.flatItems = parent.items
+            self.outlineDataSource = parent.outlineDataSource
+            self.isSearching = parent.isSearching
             self.onOpen = parent.onOpen
             self.onSort = parent.onSort
             self.onSelectionChange = parent.onSelectionChange
@@ -199,28 +233,86 @@ struct FileTableView: NSViewRepresentable {
             self.onRename = parent.onRename
             self.onNewFolder = parent.onNewFolder
             self.onSendPathToTerminal = parent.onSendPathToTerminal
+            self.onExpandCollapse = parent.onExpandCollapse
         }
 
-        // MARK: - DataSource
+        // MARK: - Node lookup helpers
 
-        func numberOfRows(in tableView: NSTableView) -> Int { items.count }
-
-        func tableView(_ tableView: NSTableView,
-                       pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
-            guard row < items.count else { return nil }
-            return items[row].url as NSURL
+        func findNodeByURL(_ url: URL) -> FileNode? {
+            func search(nodes: [FileNode]) -> FileNode? {
+                for node in nodes {
+                    if node.item.url == url { return node }
+                    if let children = outlineDataSource.expandedDirectoryURLs.contains(node.item.url)
+                        ? childrenForNode(node) : nil {
+                        if let found = search(nodes: children) { return found }
+                    }
+                }
+                return nil
+            }
+            return search(nodes: outlineDataSource.rootNodes)
         }
 
-        // MARK: - Delegate
+        private func childrenForNode(_ node: FileNode) -> [FileNode]? {
+            let count = outlineDataSource.numberOfChildren(of: node)
+            guard count > 0 else { return nil }
+            return (0..<count).map { outlineDataSource.child(index: $0, of: node) }
+        }
 
-        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?,
-                        row: Int) -> NSView? {
-            guard row < items.count,
-                  let columnId = tableColumn?.identifier.rawValue else { return nil }
-            let item = items[row]
+        private func itemForRow(_ row: Int) -> FileItem? {
+            guard row >= 0, let ov = outlineView else { return nil }
+            if isSearching {
+                return row < flatItems.count ? flatItems[row] : nil
+            }
+            return (ov.item(atRow: row) as? FileNode)?.item
+        }
+
+        // MARK: - NSOutlineViewDataSource
+
+        func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+            if isSearching { return item == nil ? flatItems.count : 0 }
+            return self.outlineDataSource.numberOfChildren(of: item as? FileNode)
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+            if isSearching {
+                return FlatFileNode(item: flatItems[index])
+            }
+            return self.outlineDataSource.child(index: index, of: item as? FileNode)
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+            if isSearching { return false }
+            guard let node = item as? FileNode else { return false }
+            return self.outlineDataSource.isExpandable(node)
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
+            if let node = item as? FileNode {
+                return node.item.url as NSURL
+            }
+            if let flat = item as? FlatFileNode {
+                return flat.item.url as NSURL
+            }
+            return nil
+        }
+
+        // MARK: - NSOutlineViewDelegate
+
+        func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?,
+                          item: Any) -> NSView? {
+            guard let columnId = tableColumn?.identifier.rawValue else { return nil }
+            let fileItem: FileItem
+            if let node = item as? FileNode {
+                fileItem = node.item
+            } else if let flat = item as? FlatFileNode {
+                fileItem = flat.item
+            } else {
+                return nil
+            }
+
             let isName = columnId == Self.nameColumn
             let reuseId = NSUserInterfaceItemIdentifier("cell.\(columnId)")
-            let cell = (tableView.makeView(withIdentifier: reuseId, owner: self)
+            let cell = (outlineView.makeView(withIdentifier: reuseId, owner: self)
                             as? NSTableCellView)
                 ?? Self.makeCell(id: reuseId, withIcon: isName)
 
@@ -230,33 +322,33 @@ struct FileTableView: NSViewRepresentable {
 
             switch columnId {
             case Self.nameColumn:
-                cell.imageView?.image = NSWorkspace.shared.icon(forFile: item.url.path)
-                cell.textField?.stringValue = item.name
+                cell.imageView?.image = NSWorkspace.shared.icon(forFile: fileItem.url.path)
+                cell.textField?.stringValue = fileItem.name
             case Self.dateColumn:
                 cell.textField?.stringValue =
-                    item.modifiedDate.map { dateFormatter.string(from: $0) } ?? "--"
+                    fileItem.modifiedDate.map { dateFormatter.string(from: $0) } ?? "--"
             case Self.sizeColumn:
                 cell.textField?.stringValue =
-                    item.size.map { sizeFormatter.string(fromByteCount: $0) } ?? "--"
+                    fileItem.size.map { sizeFormatter.string(fromByteCount: $0) } ?? "--"
             case Self.kindColumn:
-                cell.textField?.stringValue = item.kind.isEmpty ? "--" : item.kind
+                cell.textField?.stringValue = fileItem.kind.isEmpty ? "--" : fileItem.kind
             default:
                 break
             }
             return cell
         }
 
-        func tableView(_ tableView: NSTableView,
-                        sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
-            guard let descriptor = tableView.sortDescriptors.first,
+        func outlineView(_ outlineView: NSOutlineView,
+                          sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+            guard let descriptor = outlineView.sortDescriptors.first,
                   let key = descriptor.key else { return }
             onSort(key, descriptor.ascending)
         }
 
-        func tableViewSelectionDidChange(_ notification: Notification) {
-            guard let tv = tableView else { return }
-            let selected = tv.selectedRowIndexes.compactMap { row -> FileItem? in
-                row < items.count ? items[row] : nil
+        func outlineViewSelectionDidChange(_ notification: Notification) {
+            guard let ov = outlineView else { return }
+            let selected = ov.selectedRowIndexes.compactMap { row -> FileItem? in
+                itemForRow(row)
             }
             onSelectionChange(selected)
 
@@ -266,12 +358,27 @@ struct FileTableView: NSViewRepresentable {
             }
         }
 
+        func outlineView(_ outlineView: NSOutlineView, shouldExpandItem item: Any) -> Bool {
+            guard let node = item as? FileNode else { return false }
+            _ = self.outlineDataSource.loadChildren(for: node)
+            return true
+        }
+
+        func outlineViewItemDidExpand(_ notification: Notification) {
+            onExpandCollapse()
+        }
+
+        func outlineViewItemDidCollapse(_ notification: Notification) {
+            guard let node = notification.userInfo?["NSObject"] as? FileNode else { return }
+            outlineDataSource.clearChildren(for: node)
+            onExpandCollapse()
+        }
+
         // MARK: - Double Click
 
-        @objc func handleDoubleClick(_ sender: NSTableView) {
+        @objc func handleDoubleClick(_ sender: NSOutlineView) {
             let row = sender.clickedRow
-            guard row >= 0, row < items.count else { return }
-            let item = items[row]
+            guard row >= 0, let item = itemForRow(row) else { return }
             if item.isDirectory {
                 onOpen(item)
             } else {
@@ -283,48 +390,47 @@ struct FileTableView: NSViewRepresentable {
 
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
-            guard let tv = tableView else { return }
-            let clickedRow = tv.clickedRow
+            guard let ov = outlineView else { return }
+            let clickedRow = ov.clickedRow
 
             if clickedRow < 0 {
-                tv.deselectAll(nil)
-                addMenuItem(to: menu, title: "新建文件夹", action: #selector(menuNewFolder(_:)))
+                ov.deselectAll(nil)
+                addMenuItem(to: menu, title: String(localized: "New Folder"), action: #selector(menuNewFolder(_:)))
                 return
             }
 
-            guard clickedRow < items.count else { return }
+            guard let item = itemForRow(clickedRow) else { return }
 
-            if !tv.selectedRowIndexes.contains(clickedRow) {
-                tv.selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
+            if !ov.selectedRowIndexes.contains(clickedRow) {
+                ov.selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
             }
 
-            let isMultiple = tv.selectedRowIndexes.count > 1
-            let item = items[clickedRow]
+            let isMultiple = ov.selectedRowIndexes.count > 1
 
             if !isMultiple && item.isDirectory {
-                addMenuItem(to: menu, title: "进入文件夹", action: #selector(menuOpen(_:)))
+                addMenuItem(to: menu, title: String(localized: "Open Folder"), action: #selector(menuOpen(_:)))
             } else {
-                addMenuItem(to: menu, title: "打开", action: #selector(menuOpen(_:)))
+                addMenuItem(to: menu, title: String(localized: "Open"), action: #selector(menuOpen(_:)))
             }
-            addMenuItem(to: menu, title: "用其他应用打开…", action: #selector(menuOpenWith(_:)))
+            addMenuItem(to: menu, title: String(localized: "Open With…"), action: #selector(menuOpenWith(_:)))
 
             menu.addItem(.separator())
 
-            let renameItem = addMenuItem(to: menu, title: "重命名",
+            let renameItem = addMenuItem(to: menu, title: String(localized: "Rename"),
                                          action: #selector(menuRename(_:)))
             if isMultiple { renameItem.isEnabled = false }
 
-            addMenuItem(to: menu, title: "移到废纸篓", action: #selector(menuTrash(_:)))
+            addMenuItem(to: menu, title: String(localized: "Move to Trash"), action: #selector(menuTrash(_:)))
 
             menu.addItem(.separator())
 
-            addMenuItem(to: menu, title: "复制路径", action: #selector(menuCopyPath(_:)))
-            addMenuItem(to: menu, title: "发送路径到终端",
+            addMenuItem(to: menu, title: String(localized: "Copy Path"), action: #selector(menuCopyPath(_:)))
+            addMenuItem(to: menu, title: String(localized: "Send Path to Terminal"),
                         action: #selector(menuSendPathToTerminal(_:)))
 
             menu.addItem(.separator())
 
-            addMenuItem(to: menu, title: "新建文件夹", action: #selector(menuNewFolder(_:)))
+            addMenuItem(to: menu, title: String(localized: "New Folder"), action: #selector(menuNewFolder(_:)))
         }
 
         @discardableResult
@@ -338,20 +444,19 @@ struct FileTableView: NSViewRepresentable {
         // MARK: - Menu Actions
 
         @objc private func menuOpen(_ sender: Any?) {
-            guard let tv = tableView else { return }
-            if tv.selectedRowIndexes.count <= 1 {
-                let row = tv.clickedRow
-                guard row >= 0, row < items.count else { return }
-                let item = items[row]
+            guard let ov = outlineView else { return }
+            if ov.selectedRowIndexes.count <= 1 {
+                let row = ov.clickedRow
+                guard row >= 0, let item = itemForRow(row) else { return }
                 if item.isDirectory {
                     onOpen(item)
                 } else {
                     NSWorkspace.shared.open(item.url)
                 }
             } else {
-                for idx in tv.selectedRowIndexes {
-                    guard idx < items.count else { continue }
-                    NSWorkspace.shared.open(items[idx].url)
+                for idx in ov.selectedRowIndexes {
+                    guard let item = itemForRow(idx) else { continue }
+                    NSWorkspace.shared.open(item.url)
                 }
             }
         }
@@ -375,8 +480,8 @@ struct FileTableView: NSViewRepresentable {
         @objc private func menuTrash(_ sender: Any?) { onTrash() }
 
         @objc private func menuRename(_ sender: Any?) {
-            guard let tv = tableView, tv.selectedRow >= 0 else { return }
-            beginRename(row: tv.selectedRow)
+            guard let ov = outlineView, ov.selectedRow >= 0 else { return }
+            beginRename(row: ov.selectedRow)
         }
 
         @objc private func menuCopyPath(_ sender: Any?) {
@@ -396,39 +501,39 @@ struct FileTableView: NSViewRepresentable {
         }
 
         private func selectedURLs() -> [URL] {
-            guard let tv = tableView else { return [] }
-            return tv.selectedRowIndexes.compactMap { idx in
-                idx < items.count ? items[idx].url : nil
+            guard let ov = outlineView else { return [] }
+            return ov.selectedRowIndexes.compactMap { row in
+                itemForRow(row)?.url
             }
         }
 
         // MARK: - Inline Editing
 
         func beginRename(row: Int) {
-            guard let tv = tableView, row >= 0, row < items.count else { return }
-            tv.scrollRowToVisible(row)
-            let nameColIndex = tv.column(
+            guard let ov = outlineView, row >= 0, itemForRow(row) != nil else { return }
+            ov.scrollRowToVisible(row)
+            let nameColIndex = ov.column(
                 withIdentifier: NSUserInterfaceItemIdentifier(Self.nameColumn))
             guard nameColIndex >= 0,
-                  let cellView = tv.view(atColumn: nameColIndex, row: row,
+                  let cellView = ov.view(atColumn: nameColIndex, row: row,
                                          makeIfNecessary: true) as? NSTableCellView,
                   let textField = cellView.textField else { return }
             editingRow = row
             textField.isEditable = true
             textField.isSelectable = true
-            tv.window?.makeFirstResponder(textField)
+            ov.window?.makeFirstResponder(textField)
         }
 
         func control(_ control: NSControl, textView: NSTextView,
                      doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-                if editingRow >= 0, editingRow < items.count {
-                    (control as? NSTextField)?.stringValue = items[editingRow].name
+                if let item = itemForRow(editingRow) {
+                    (control as? NSTextField)?.stringValue = item.name
                 }
                 (control as? NSTextField)?.isEditable = false
                 (control as? NSTextField)?.isSelectable = false
                 editingRow = -1
-                tableView?.window?.makeFirstResponder(tableView)
+                outlineView?.window?.makeFirstResponder(outlineView)
                 return true
             }
             return false
@@ -440,12 +545,11 @@ struct FileTableView: NSViewRepresentable {
             textField.isEditable = false
             textField.isSelectable = false
 
-            guard editingRow >= 0, editingRow < items.count else {
+            guard let oldItem = itemForRow(editingRow) else {
                 editingRow = -1
                 return
             }
 
-            let oldItem = items[editingRow]
             editingRow = -1
 
             if newName.isEmpty || newName == oldItem.name {
@@ -478,7 +582,7 @@ struct FileTableView: NSViewRepresentable {
                 return true
             }
             if kc == 126 || kc == 125 {
-                tableView?.keyDown(with: event)
+                outlineView?.keyDown(with: event)
                 return true
             }
             return false
@@ -486,15 +590,17 @@ struct FileTableView: NSViewRepresentable {
 
         func previewPanel(_ panel: QLPreviewPanel!,
                           sourceFrameOnScreenFor item: any QLPreviewItem) -> NSRect {
-            guard let tv = tableView,
-                  let url = (item as? NSURL) as URL?,
-                  let row = items.firstIndex(where: { $0.url == url }) else { return .zero }
-            let nameColIndex = tv.column(
+            guard let ov = outlineView,
+                  let url = (item as? NSURL) as URL? else { return .zero }
+            let node = findNodeByURL(url)
+            let row = node != nil ? ov.row(forItem: node) : -1
+            guard row >= 0 else { return .zero }
+            let nameColIndex = ov.column(
                 withIdentifier: NSUserInterfaceItemIdentifier(Self.nameColumn))
             guard nameColIndex >= 0 else { return .zero }
-            let cellRect = tv.frameOfCell(atColumn: nameColIndex, row: row)
-            let windowRect = tv.convert(cellRect, to: nil)
-            return tv.window?.convertToScreen(windowRect) ?? .zero
+            let cellRect = ov.frameOfCell(atColumn: nameColIndex, row: row)
+            let windowRect = ov.convert(cellRect, to: nil)
+            return ov.window?.convertToScreen(windowRect) ?? .zero
         }
 
         // MARK: - Cell Factory
@@ -534,5 +640,16 @@ struct FileTableView: NSViewRepresentable {
             }
             return cell
         }
+    }
+}
+
+/// 搜索模式下的 flat item 包装（不参与 outline 层级）。
+final class FlatFileNode: NSObject {
+    let item: FileItem
+    init(item: FileItem) { self.item = item }
+    override var hash: Int { item.url.hashValue }
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? FlatFileNode else { return false }
+        return item.url == other.item.url
     }
 }

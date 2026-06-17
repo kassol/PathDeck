@@ -56,7 +56,7 @@ struct ContentView: View {
                         Image(systemName: "chevron.up")
                     }
                     .keyboardShortcut(.upArrow, modifiers: .command)
-                    .help("返回上级")
+                    .help("Go to Parent")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -64,7 +64,7 @@ struct ContentView: View {
                     } label: {
                         Image(systemName: "sidebar.right")
                     }
-                    .help(isPreviewPaneVisible ? "隐藏预览面板" : "显示预览面板")
+                    .help(LocalizedStringKey(isPreviewPaneVisible ? "Hide Preview Pane" : "Show Preview Pane"))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if tabManager.activeTabMode == .finderFirst {
@@ -73,7 +73,7 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "terminal")
                         }
-                        .help(tabManager.activeTabTerminalVisible ? "隐藏终端" : "显示终端")
+                        .help(LocalizedStringKey(tabManager.activeTabTerminalVisible ? "Hide Terminal" : "Show Terminal"))
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -83,7 +83,7 @@ struct ContentView: View {
                         Image(systemName: tabManager.activeTabMode == .terminalFirst
                               ? "rectangle.split.2x1" : "rectangle.bottomhalf.filled")
                     }
-                    .help(tabManager.activeTabMode == .terminalFirst ? "Finder-first 模式" : "Terminal-first 模式")
+                    .help(LocalizedStringKey(tabManager.activeTabMode == .terminalFirst ? "Finder-first Mode" : "Terminal-first Mode"))
                 }
             }
             .onChange(of: tabManager.activeTabTerminalVisible) { _, visible in
@@ -206,6 +206,9 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 FileTableView(
                     items: model.items,
+                    outlineDataSource: model.outlineDataSource,
+                    isSearching: model.isSearching,
+                    dirtyDirectories: model.dirtyDirectories,
                     pendingRenameURL: model.pendingRenameURL,
                     revealSelection: model.revealSelection,
                     onOpen: { model.enter($0) },
@@ -220,9 +223,11 @@ struct ContentView: View {
                     onNewFolder: { model.newFolder() },
                     onClearPendingRename: { model.pendingRenameURL = nil },
                     onClearRevealSelection: { model.revealSelection = nil },
+                    onClearDirtyDirectories: { model.dirtyDirectories = nil },
                     onSendPathToTerminal: { urls in
                         sendPathToTerminal(urls)
-                    }
+                    },
+                    onExpandCollapse: { model.updateWatcherExpandedDirectories() }
                 )
 
                 if isPreviewPaneVisible {
@@ -336,10 +341,10 @@ struct ContentView: View {
     private func confirmOpenTerminal(at url: URL) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "在此目录打开终端？"
-        alert.informativeText = "一个外部请求要在以下目录打开终端：\n\(url.path(percentEncoded: false))"
-        alert.addButton(withTitle: "打开终端")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = String(localized: "Open Terminal in this directory?")
+        alert.informativeText = String(localized: "An external request wants to open a terminal in:\n\(url.path(percentEncoded: false))")
+        alert.addButton(withTitle: String(localized: "Open Terminal"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -594,7 +599,7 @@ private struct PathBarView: View {
                         .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("回到锚定目录: \(anchor.path(percentEncoded: false))")
+                    .help("Back to anchor: \(anchor.path(percentEncoded: false))")
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .semibold))

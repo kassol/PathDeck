@@ -12,6 +12,8 @@ final class WorkspaceModel {
     private(set) var items: [FileItem] = []
     private(set) var allItems: [FileItem] = []
 
+    let outlineDataSource = OutlineDataSource()
+
     var sortColumn: SortColumn = .name
     var sortAscending: Bool = true
     var showHidden: Bool = false
@@ -23,6 +25,9 @@ final class WorkspaceModel {
     var searchQuery: String = "" {
         didSet { applySearch() }
     }
+
+    /// FSWatcher 事件命中的 dirty 目录集合（主线程设置，FileTableView 消费后清空）。
+    var dirtyDirectories: Set<String>?
 
     var pathSegments: [(name: String, url: URL)] {
         var segments: [(name: String, url: URL)] = []
@@ -55,8 +60,10 @@ final class WorkspaceModel {
         self.sortAscending = sortAscending
         self.showHidden = showHidden
 
-        watcher = FSWatcher { [weak self] in
-            DispatchQueue.main.async { self?.reload() }
+        watcher = FSWatcher { [weak self] dirtyDirs in
+            DispatchQueue.main.async {
+                self?.handleFSEvents(dirtyDirs: dirtyDirs)
+            }
         }
 
         reload()
@@ -82,10 +89,6 @@ final class WorkspaceModel {
     }
 
     /// 导航到首项父目录并高亮选择集（跨目录 reveal / Open Selection，单项即长度 1）。
-    /// 单 workspace 只展示一个目录：仅高亮与首项同父目录的项，跨父目录的其余项忽略。
-    /// `selectedURLs`/`revealSelection` 锚在 navigate 后的 `currentURL` 上，与 `DirectoryLister` 子项 URL 同构；
-    /// `revealSelection` 驱动 `FileTableView` 一次性 `selectRowIndexes`（全部行）+ `scrollRowToVisible`（首项），
-    /// 表格选中后经 `onSelectionChange` 回写 `selectedURLs`（单设 `selectedURLs` 不触发表格高亮）。
     func reveal(_ fileURLs: [URL]) {
         guard let first = fileURLs.first else { return }
         navigate(to: first.deletingLastPathComponent())
@@ -116,6 +119,10 @@ final class WorkspaceModel {
         sortAscending = ascending
         allItems = Self.sortedItems(allItems, by: sortColumn, ascending: sortAscending)
         applySearch()
+
+        outlineDataSource.sortColumn = col
+        outlineDataSource.sortAscending = ascending
+        outlineDataSource.resortAll()
     }
 
     func copyCurrentPath() {
@@ -161,8 +168,7 @@ final class WorkspaceModel {
         }
     }
 
-    static func newFolderName(in existingNames: Set<String>) -> String {
-        let baseName = "未命名文件夹"
+    static func newFolderName(in existingNames: Set<String>, baseName: String = String(localized: "untitled folder")) -> String {
         if !existingNames.contains(baseName) { return baseName }
         var counter = 2
         while existingNames.contains("\(baseName) \(counter)") {
@@ -175,6 +181,43 @@ final class WorkspaceModel {
         let rawItems = (try? DirectoryLister.list(currentURL, includeHidden: showHidden)) ?? []
         allItems = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
         applySearch()
+
+        outlineDataSource.sortColumn = sortColumn
+        outlineDataSource.sortAscending = sortAscending
+        outlineDataSource.showHidden = showHidden
+        outlineDataSource.loadRoot(currentURL)
+        syncWatcherExpandedDirs()
+    }
+
+    func updateWatcherExpandedDirectories() {
+        syncWatcherExpandedDirs()
+    }
+
+    private func syncWatcherExpandedDirs() {
+        watcher?.setExpandedDirectories(outlineDataSource.expandedDirectoryURLs)
+    }
+
+    private func handleFSEvents(dirtyDirs: Set<String>) {
+        let rootPath: String = {
+            var p = currentURL.path(percentEncoded: false)
+            if p.hasSuffix("/") && p.count > 1 { p = String(p.dropLast()) }
+            return p
+        }()
+
+        if dirtyDirs.contains(rootPath) {
+            let rawItems = (try? DirectoryLister.list(currentURL, includeHidden: showHidden)) ?? []
+            allItems = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
+            applySearch()
+            outlineDataSource.refreshRoot(currentURL)
+        }
+
+        for dirPath in dirtyDirs where dirPath != rootPath {
+            let url = URL(fileURLWithPath: dirPath)
+            _ = outlineDataSource.reloadChildren(for: url)
+        }
+
+        syncWatcherExpandedDirs()
+        dirtyDirectories = dirtyDirs
     }
 
     private func applySearch() {

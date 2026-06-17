@@ -32,7 +32,7 @@ struct FileTabBar: View {
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
-                .help("新建标签页")
+                .help("New Tab")
             }
         }
         .frame(height: 28)
