@@ -179,8 +179,15 @@ final class TabManager {
         fileTabs[idx].activeTerminalID = sessionID
     }
 
-    func renameTerminalSession(_ sessionID: UUID, to title: String) {
+    func renameTerminalSession(_ sessionID: UUID, to title: String, manual: Bool = false) {
+        if manual && title.isEmpty {
+            terminalSessions[sessionID]?.isManuallyRenamed = false
+            return
+        }
         terminalSessions[sessionID]?.title = title
+        if manual {
+            terminalSessions[sessionID]?.isManuallyRenamed = true
+        }
     }
 
     func updateTerminalCwd(_ sessionID: UUID, to url: URL) {
@@ -254,7 +261,8 @@ final class TabManager {
                 guard let session = terminalSessions[id] else { return nil }
                 return TerminalTabState(
                     title: session.title,
-                    cwdPath: session.currentCwd.path(percentEncoded: false)
+                    cwdPath: session.currentCwd.path(percentEncoded: false),
+                    isManuallyRenamed: session.isManuallyRenamed
                 )
             }
             let activeIndex: Int? = tab.activeTerminalID.flatMap {
@@ -330,7 +338,7 @@ final class TabManager {
                 ) && termIsDir.boolValue ? termCwd : home
 
                 let sessionID = terminalEngine.createSession(cwd: cwd)
-                let session = TerminalSession(id: sessionID, title: termState.title, cwd: cwd)
+                let session = TerminalSession(id: sessionID, title: termState.title, cwd: cwd, isManuallyRenamed: termState.isManuallyRenamed)
                 terminalSessions[sessionID] = session
                 tab.terminalSessionIDs.append(sessionID)
                 if tab.activeTerminalID == nil {

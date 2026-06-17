@@ -43,19 +43,21 @@ struct FileTableView: NSViewRepresentable {
         menu.autoenablesItems = false
         tableView.menu = menu
 
-        let columns: [(id: String, title: String, width: CGFloat)] = [
-            (Coordinator.nameColumn, "名称", 280),
-            (Coordinator.dateColumn, "修改日期", 170),
-            (Coordinator.sizeColumn, "大小", 90),
-            (Coordinator.kindColumn, "类型", 150),
+        let columns: [(id: String, title: String, width: CGFloat, minWidth: CGFloat)] = [
+            (Coordinator.nameColumn, "名称", 280, 120),
+            (Coordinator.dateColumn, "修改日期", 170, 100),
+            (Coordinator.sizeColumn, "大小", 90, 60),
+            (Coordinator.kindColumn, "类型", 150, 60),
         ]
         for spec in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(spec.id))
             column.title = spec.title
             column.width = spec.width
+            column.minWidth = spec.minWidth
             column.sortDescriptorPrototype = NSSortDescriptor(key: spec.id, ascending: true)
             tableView.addTableColumn(column)
         }
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
 
         tableView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
         tableView.setAccessibilityIdentifier("fileTable")
@@ -316,8 +318,6 @@ struct FileTableView: NSViewRepresentable {
 
             menu.addItem(.separator())
 
-            addMenuItem(to: menu, title: "在 Finder 中显示",
-                        action: #selector(menuRevealInFinder(_:)))
             addMenuItem(to: menu, title: "复制路径", action: #selector(menuCopyPath(_:)))
             addMenuItem(to: menu, title: "发送路径到终端",
                         action: #selector(menuSendPathToTerminal(_:)))
@@ -377,12 +377,6 @@ struct FileTableView: NSViewRepresentable {
         @objc private func menuRename(_ sender: Any?) {
             guard let tv = tableView, tv.selectedRow >= 0 else { return }
             beginRename(row: tv.selectedRow)
-        }
-
-        @objc private func menuRevealInFinder(_ sender: Any?) {
-            let urls = selectedURLs()
-            guard !urls.isEmpty else { return }
-            NSWorkspace.shared.activateFileViewerSelecting(urls)
         }
 
         @objc private func menuCopyPath(_ sender: Any?) {

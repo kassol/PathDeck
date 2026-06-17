@@ -40,15 +40,25 @@ enum ShellIntegration {
           url_path="${url_path//?/%3F}"
           printf '\\e]7;file://%s%s\\e\\\\' "$HOST" "$url_path"
         }
+        __pathdeck_title_precmd() {
+          printf '\\e]2;%s\\e\\\\' "${PWD##*/}"
+        }
+        __pathdeck_title_preexec() {
+          printf '\\e]2;%s\\e\\\\' "$1"
+        }
         autoload -Uz add-zsh-hook 2>/dev/null
         if (( $+functions[add-zsh-hook] )); then
           add-zsh-hook precmd __pathdeck_osc7
+          add-zsh-hook precmd __pathdeck_title_precmd
           add-zsh-hook chpwd __pathdeck_osc7
+          add-zsh-hook preexec __pathdeck_title_preexec
         else
-          precmd_functions+=(__pathdeck_osc7)
+          precmd_functions+=(__pathdeck_osc7 __pathdeck_title_precmd)
           chpwd_functions+=(__pathdeck_osc7)
+          preexec_functions+=(__pathdeck_title_preexec)
         fi
         __pathdeck_osc7
+        __pathdeck_title_precmd
         unset _pd_orig _PATHDECK_INTEGRATION
         """
         try? zshrcScript.write(to: zshrc, atomically: true, encoding: .utf8)
@@ -83,7 +93,9 @@ enum ShellIntegration {
         } else if shell == "bash" {
             let existing = ProcessInfo.processInfo.environment["PROMPT_COMMAND"] ?? ""
             let osc7 = "printf '\\033]7;file://%s%s\\033\\\\' \"$HOSTNAME\" \"${PWD// /%20}\""
-            let combined = existing.isEmpty ? osc7 : "\(osc7);\(existing)"
+            let title = "printf '\\033]2;%s\\033\\\\' \"${PWD##*/}\""
+            let ours = "\(osc7);\(title)"
+            let combined = existing.isEmpty ? ours : "\(ours);\(existing)"
             vars.append(("PROMPT_COMMAND", combined))
         }
 

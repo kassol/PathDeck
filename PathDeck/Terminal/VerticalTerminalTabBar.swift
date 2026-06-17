@@ -41,7 +41,6 @@ struct VerticalTerminalTabBar: View {
             .buttonStyle(.plain)
             .help("新建终端")
         }
-        .frame(width: 140)
         .background(.bar)
     }
 }
@@ -114,9 +113,7 @@ private struct VerticalTabItem: View {
 
     private func commitRename() {
         let trimmed = editingTitle.trimmingCharacters(in: .whitespaces)
-        if !trimmed.isEmpty {
-            onRename(trimmed)
-        }
+        onRename(trimmed)
         isEditing = false
     }
 }

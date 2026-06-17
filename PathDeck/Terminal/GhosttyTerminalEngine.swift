@@ -4,6 +4,7 @@ import GhosttyKit
 final class GhosttyTerminalEngine: TerminalEngine {
     var onSessionClose: ((UUID) -> Void)?
     var onCwdChange: ((UUID, URL) -> Void)?
+    var onTitleChange: ((UUID, String) -> Void)?
     var onPendingDropped: ((UUID, Int, PendingDropReason) -> Void)?
 
     private let engineID = ObjectIdentifier(UUID.self as Any.Type)
@@ -27,6 +28,9 @@ final class GhosttyTerminalEngine: TerminalEngine {
 
         GhosttyApp.shared.registerPwdHandler(id: registrationID) { [weak self] surface, pwd in
             self?.handlePwdChange(surface: surface, pwd: pwd)
+        }
+        GhosttyApp.shared.registerTitleHandler(id: registrationID) { [weak self] surface, title in
+            self?.handleTitleChange(surface: surface, title: title)
         }
     }
 
@@ -140,6 +144,14 @@ final class GhosttyTerminalEngine: TerminalEngine {
                 url = URL(fileURLWithPath: pwd).standardizedFileURL
             }
             onCwdChange?(id, url)
+            return
+        }
+    }
+
+    private func handleTitleChange(surface: ghostty_surface_t, title: String) {
+        for (id, view) in surfaceViews {
+            guard view.surface == surface else { continue }
+            onTitleChange?(id, title)
             return
         }
     }

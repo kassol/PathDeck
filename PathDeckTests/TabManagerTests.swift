@@ -328,6 +328,45 @@ struct TabManagerTests {
         #expect(tm.terminalSessions[session.id]?.title == "Custom")
     }
 
+    @Test func manualRenameSetsFlag() {
+        let tm = makeManager()
+        let tabID = tm.activeFileTabID!
+        let session = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(session, to: tabID)
+
+        tm.renameTerminalSession(session.id, to: "MyTitle", manual: true)
+        #expect(tm.terminalSessions[session.id]?.title == "MyTitle")
+        #expect(tm.terminalSessions[session.id]?.isManuallyRenamed == true)
+    }
+
+    @Test func autoRenameSkippedWhenManual() {
+        let tm = makeManager()
+        let tabID = tm.activeFileTabID!
+        let session = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(session, to: tabID)
+
+        tm.renameTerminalSession(session.id, to: "Pinned", manual: true)
+        tm.renameTerminalSession(session.id, to: "OSC Override")
+        #expect(tm.terminalSessions[session.id]?.title == "OSC Override")
+
+        // Simulating what ContentView.onTitleChange does: skip if isManuallyRenamed
+        #expect(tm.terminalSessions[session.id]?.isManuallyRenamed == true)
+    }
+
+    @Test func clearTitleResetsManualFlag() {
+        let tm = makeManager()
+        let tabID = tm.activeFileTabID!
+        let session = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(session, to: tabID)
+
+        tm.renameTerminalSession(session.id, to: "Pinned", manual: true)
+        #expect(tm.terminalSessions[session.id]?.isManuallyRenamed == true)
+
+        tm.renameTerminalSession(session.id, to: "", manual: true)
+        #expect(tm.terminalSessions[session.id]?.isManuallyRenamed == false)
+        #expect(tm.terminalSessions[session.id]?.title == "Pinned")
+    }
+
     @Test func updateTerminalCwd() {
         let tm = makeManager()
         let tabID = tm.activeFileTabID!

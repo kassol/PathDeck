@@ -6,7 +6,6 @@ struct PreviewPane: View {
     let selectedURLs: [URL]
     let currentDirectory: URL
     var onSendPath: (([URL]) -> Void)?
-    var onRevealInFinder: ((URL) -> Void)?
 
     var body: some View {
         Group {
@@ -89,8 +88,9 @@ struct PreviewPane: View {
             ActionButton(title: "Send Path to Terminal", icon: "terminal") {
                 onSendPath?([url])
             }
-            ActionButton(title: "Reveal in Finder", icon: "folder") {
-                onRevealInFinder?(url)
+            ActionButton(title: "Copy Path", icon: "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.path(percentEncoded: false), forType: .string)
             }
         }
     }

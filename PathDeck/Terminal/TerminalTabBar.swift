@@ -105,9 +105,7 @@ private struct TabItem: View {
 
     private func commitRename() {
         let trimmed = editingTitle.trimmingCharacters(in: .whitespaces)
-        if !trimmed.isEmpty {
-            onRename(trimmed)
-        }
+        onRename(trimmed)
         isEditing = false
     }
 

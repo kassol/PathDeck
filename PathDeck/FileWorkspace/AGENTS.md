@@ -18,7 +18,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
 | `ShellEscape.swift` | POSIX shell 路径转义纯函数（单引号包裹，Send Path to Terminal 用） |
-| `PreviewPane.swift` | 右侧文件预览面板：QLThumbnail 缩略图 + 元数据表（Kind/Size/Where/Created/Modified）+ Quick Actions（Send Path / Reveal in Finder）；⌘⇧P toggle |
+| `PreviewPane.swift` | 右侧文件预览面板：QLThumbnail 缩略图 + 元数据表（Kind/Size/Where/Created/Modified）+ Quick Actions（Send Path / Copy Path）；⌘⇧P toggle |
 
 ## 模块规范
 
@@ -34,6 +34,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-17 S24 UX Polish：`FileTableView` 列宽 `lastColumnOnlyAutoresizingStyle` + 各列 `minWidth`；移除右键菜单"在 Finder 中显示" + `menuRevealInFinder`；`PreviewPane` 移除 `onRevealInFinder` 参数，"Reveal in Finder" 按钮替换为 "Copy Path"。
 - 2026-06-17 S23 WorkspaceModel 多实例适配：移除 `defaults` 参数 + `lastFolderKey` + `isBottomPanelVisible` + didSet 持久化；`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，sort/showHidden 由 TabManager 统一管理和持久化。
 - 2026-06-16 D1 Kill Change Journal：移除 ChangeJournal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 简化后迁入本模块（纯信号回调，无事件分类），WorkspaceModel 剥离 ~10 属性 + ~7 方法，FileTableView 移除变化色点，PreviewPane 移除版本 section，移除 GRDB 依赖。
 - 2026-06-16 S18 `WorkspaceModel` 新增 `reveal(_ fileURLs: [URL])`：navigate 到首项父目录 → 设 `selectedURLs` + `revealSelection`。表格选择信号升级为 `revealSelection: [URL]?`，`FileTableView` 用 `IndexSet` 一次性选中全部行 + 滚动首项。供外部入口（Finder Services Reveal/Open Selection / URL Scheme）跨目录定位文件用。
@@ -43,7 +44,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 - 2026-06-14 S10 拖拽到终端：`FileTableView` 新增 `pasteboardWriterForRow`（文件行可拖出）。`ContentView` 终端面板加 `.onDrop` 接收文件拖放。
 - 2026-06-14 S9 Send Path to Terminal：右键菜单「发送路径到终端」（单选/多选，shell-escaped）+ ⌘⇧T 快捷键。新增 `ShellEscape.swift`。
 - 2026-06-14 S7 打开任意文件夹 + 文件名搜索（M1 收尾）：⌘O 打开文件夹 + Open Recent + 启动恢复 + 拖放文件夹 + ⌘F 搜索栏 + 文件名实时过滤 + Esc 关闭搜索。
-- 2026-06-14 S5 右键菜单 + 文件操作落地：NSMenu 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Trash/Rename/New Folder/Reveal in Finder/Copy Path。
+- 2026-06-14 S5 右键菜单 + 文件操作落地：NSMenu 右键菜单（单选/多选/空白区域三态）+ Open/Open With…/Trash/Rename/New Folder/Copy Path。~~Reveal in Finder~~ S24 killed。
 - 2026-06-14 S4 路径导航 + 排序 + 隐藏文件：路径面包屑栏 + NSTableView 四列列头排序 + ⌘⇧. 隐藏文件 + ⌘⌥C 复制路径。
 - 2026-06-14 S6 Quick Look 预览：空格键 toggle `QLPreviewPanel`；`updateNSView` 加 `itemsChanged` 守卫。
 - 2026-06-13 S1 落地：启动即家目录的文件列表（四列元数据 + 系统图标）+ 双击进入 / ⌘↑ 返回上级。

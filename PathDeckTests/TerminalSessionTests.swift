@@ -132,6 +132,7 @@ struct TerminalSessionTests {
         let decoded = try JSONDecoder().decode(TerminalTabState.self, from: data)
         #expect(decoded.title == "Terminal 2")
         #expect(decoded.cwdPath == "/Users/test/project")
+        #expect(decoded.isManuallyRenamed == false)
     }
 
     @Test func terminalTabStateArrayRoundTrip() throws {
@@ -144,5 +145,20 @@ struct TerminalSessionTests {
         #expect(decoded.count == 2)
         #expect(decoded[0].title == "Terminal")
         #expect(decoded[1].cwdPath == "/Users/test")
+    }
+
+    @Test func terminalTabStateIsManuallyRenamedRoundTrip() throws {
+        let state = TerminalTabState(title: "Custom", cwdPath: "/tmp", isManuallyRenamed: true)
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(TerminalTabState.self, from: data)
+        #expect(decoded.isManuallyRenamed == true)
+    }
+
+    @Test func terminalTabStateLegacyDecodeMissingField() throws {
+        let json = #"{"title":"Shell","cwdPath":"/tmp"}"#
+        let data = Data(json.utf8)
+        let decoded = try JSONDecoder().decode(TerminalTabState.self, from: data)
+        #expect(decoded.title == "Shell")
+        #expect(decoded.isManuallyRenamed == false)
     }
 }

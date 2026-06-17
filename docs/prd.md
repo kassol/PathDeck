@@ -486,7 +486,7 @@ P3：长期愿景
 多选
 拖拽
 右键菜单
-Reveal in Finder
+~~Reveal in Finder~~（S24 killed：文件工作台内跳转 Finder 自我矛盾，替换为 Copy Path）
 Open With
 Move to Trash
 Rename

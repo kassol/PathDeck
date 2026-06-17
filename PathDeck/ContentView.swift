@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var tabManager = TabManager()
     @State private var terminalEngine = GhosttyTerminalEngine()
     @State private var terminalHeight: CGFloat = 250
+    @State private var verticalTabWidth: CGFloat = 140
     @State private var isPreviewPaneVisible: Bool = true
     @State private var hasRestoredState: Bool = false
     @State private var closeTabMonitor: Any?
@@ -23,6 +24,7 @@ struct ContentView: View {
     private let terminalMaxFraction: CGFloat = 0.6
 
     private static let bottomPanelHeightKey = "bottomPanelHeight"
+    private static let verticalTabWidthKey = "verticalTabWidth"
     private static let previewPaneVisibleKey = "previewPaneVisible"
 
     private var model: WorkspaceModel? { tabManager.activeModel }
@@ -125,6 +127,7 @@ struct ContentView: View {
         .modifier(StatePersistenceModifier(
             tabManager: tabManager,
             terminalHeight: terminalHeight,
+            verticalTabWidth: verticalTabWidth,
             isPreviewPaneVisible: isPreviewPaneVisible,
             onSaveTabState: { tabManager.saveTabState() }
         ))
@@ -137,6 +140,10 @@ struct ContentView: View {
         terminalEngine.onCwdChange = { [self] id, url in
             tabManager.updateTerminalCwd(id, to: url)
             tabManager.saveTabState()
+        }
+        terminalEngine.onTitleChange = { [self] id, title in
+            guard tabManager.terminalSessions[id]?.isManuallyRenamed != true else { return }
+            tabManager.renameTerminalSession(id, to: title)
         }
         terminalEngine.onPendingDropped = { id, count, reason in
             NSLog("[PathDeck] dropped %d pending text(s) for session %@: %@",
@@ -223,10 +230,7 @@ struct ContentView: View {
                     PreviewPane(
                         selectedURLs: model.selectedURLs,
                         currentDirectory: model.currentURL,
-                        onSendPath: { urls in sendPathToTerminal(urls) },
-                        onRevealInFinder: { url in
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        }
+                        onSendPath: { urls in sendPathToTerminal(urls) }
                     )
                 }
             }
@@ -245,7 +249,7 @@ struct ContentView: View {
                     onSelect: { tabManager.setActiveTerminal($0) },
                     onNewTerminalTab: { createTerminalTab() },
                     onCloseTerminalTab: { closeTerminalTab($0) },
-                    onRename: { tabManager.renameTerminalSession($0, to: $1) },
+                    onRename: { tabManager.renameTerminalSession($0, to: $1, manual: true) },
                     onNavigateToCwd: { url in model.navigate(to: url) }
                 )
             }
@@ -275,11 +279,16 @@ struct ContentView: View {
                 onSelect: { tabManager.setActiveTerminal($0) },
                 onNewTab: { createTerminalTab() },
                 onCloseTab: { closeTerminalTab($0) },
-                onRename: { tabManager.renameTerminalSession($0, to: $1) },
+                onRename: { tabManager.renameTerminalSession($0, to: $1, manual: true) },
                 onNavigateToCwd: { url in model?.navigate(to: url) }
             )
+            .frame(width: verticalTabWidth)
 
-            Divider()
+            VerticalDividerView(
+                width: $verticalTabWidth,
+                minWidth: 100,
+                maxWidth: 300
+            )
 
             if !tabManager.allTerminalSessionIDs.isEmpty {
                 TerminalPanelView(
@@ -464,6 +473,9 @@ struct ContentView: View {
         if defaults.object(forKey: Self.bottomPanelHeightKey) != nil {
             terminalHeight = CGFloat(defaults.double(forKey: Self.bottomPanelHeightKey))
         }
+        if defaults.object(forKey: Self.verticalTabWidthKey) != nil {
+            verticalTabWidth = CGFloat(defaults.double(forKey: Self.verticalTabWidthKey))
+        }
         if defaults.object(forKey: Self.previewPaneVisibleKey) != nil {
             isPreviewPaneVisible = defaults.bool(forKey: Self.previewPaneVisibleKey)
         }
@@ -497,6 +509,34 @@ private struct BottomPanelBar: View {
         }
         .frame(height: 28)
         .background(.bar)
+    }
+}
+
+// MARK: - Vertical Tab Divider
+
+private struct VerticalDividerView: View {
+    @Binding var width: CGFloat
+    let minWidth: CGFloat
+    let maxWidth: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 4)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .named("workspace"))
+                    .onChanged { value in
+                        width = max(minWidth, min(value.location.x, maxWidth))
+                    }
+            )
     }
 }
 
@@ -593,11 +633,12 @@ private struct PathBarView: View {
 private struct StatePersistenceModifier: ViewModifier {
     let tabManager: TabManager
     let terminalHeight: CGFloat
+    let verticalTabWidth: CGFloat
     let isPreviewPaneVisible: Bool
     let onSaveTabState: () -> Void
 
     func body(content: Content) -> some View {
-        content
+        let withTabState = content
             .onChange(of: tabManager.allTerminalSessionIDs.count) { _, _ in
                 onSaveTabState()
             }
@@ -613,8 +654,12 @@ private struct StatePersistenceModifier: ViewModifier {
             .onChange(of: tabManager.activeTabMode) { _, _ in
                 onSaveTabState()
             }
+        return withTabState
             .onChange(of: terminalHeight) { _, newValue in
                 UserDefaults.standard.set(Double(newValue), forKey: "bottomPanelHeight")
+            }
+            .onChange(of: verticalTabWidth) { _, newValue in
+                UserDefaults.standard.set(Double(newValue), forKey: "verticalTabWidth")
             }
             .onChange(of: isPreviewPaneVisible) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: "previewPaneVisible")
