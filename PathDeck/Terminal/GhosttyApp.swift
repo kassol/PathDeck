@@ -5,6 +5,7 @@
 //  Created by kassol on 2026/6/13.
 //
 
+import AppKit
 import Foundation
 import GhosttyKit
 
@@ -70,9 +71,40 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         runtime.action_cb = { _, target, action in
             GhosttyApp.shared.handleAction(target: target, action: action)
         }
-        runtime.read_clipboard_cb = { _, _, _ in false }
+        runtime.read_clipboard_cb = { ud, clipboardType, state in
+            guard clipboardType == GHOSTTY_CLIPBOARD_STANDARD else { return false }
+            guard let content = NSPasteboard.general.string(forType: .string) else { return false }
+            guard let ud else { return false }
+            let view = Unmanaged<GhosttySurfaceView>.fromOpaque(ud).takeUnretainedValue()
+            guard let surface = view.surface else { return false }
+            content.withCString { ptr in
+                ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
+            }
+            return true
+        }
         runtime.confirm_read_clipboard_cb = { _, _, _, _ in }
-        runtime.write_clipboard_cb = { _, _, _, _, _ in }
+        runtime.write_clipboard_cb = { _, clipboardType, contentPtr, contentCount, _ in
+            guard clipboardType == GHOSTTY_CLIPBOARD_STANDARD,
+                  let contentPtr, contentCount > 0 else { return }
+            let contents = UnsafeBufferPointer(start: contentPtr, count: contentCount)
+            var items: [(NSPasteboard.PasteboardType, String)] = []
+            for content in contents {
+                guard let dataPtr = content.data else { continue }
+                let text = String(cString: dataPtr)
+                let mime = content.mime.map { String(cString: $0) } ?? "text/plain"
+                switch mime {
+                case "text/plain": items.append((.string, text))
+                case "text/html":  items.append((.html, text))
+                default: break
+                }
+            }
+            guard !items.isEmpty else { return }
+            let pb = NSPasteboard.general
+            pb.declareTypes(items.map(\.0), owner: nil)
+            for (type, text) in items {
+                pb.setString(text, forType: type)
+            }
+        }
         runtime.close_surface_cb = { _, _ in
             NotificationCenter.default.post(name: .ghosttySurfaceDidClose, object: nil)
         }
