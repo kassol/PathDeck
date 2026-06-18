@@ -165,7 +165,7 @@ cmux/con 证明的是「libghostty 这条嵌入路径一般可行」，**没有�
 ## 测试
 
 - **自动**：`GhosttyLinkTests` 调 `ghostty_info()` 断言返回非空版本——证明库链接正确、C 符号可从 Swift 调、不依赖窗口/GPU。
-- **手动**：Sir 在 Xcode 运行，按 5 条验证标准走查。依 memory：实现方不自动 `open` app，自动验证限 `build + 单测`。
+- **手动**：作者在 Xcode 运行，按 5 条验证标准走查。依 memory：实现方不自动 `open` app，自动验证限 `build + 单测`。
 
 ```
 xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -configuration Debug build
@@ -181,7 +181,7 @@ xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -only-testing:PathDeckTe
 - 新建 `PathDeck/Terminal/AGENTS.md`（构建前置、spike 标注、实测渲染模型、importer 陷阱）
 - 更新根 `AGENTS.md`：目录索引补 `Terminal`；技术栈表确认嵌入已实测；变更日志记 S2 结果
 - 本文件状态表 S2 标记已完成；S1 plan 的 M0 切片表同步
-- 实现方只跑 build + 单测，GUI 冒烟交 Sir 走查
+- 实现方只跑 build + 单测，GUI 冒烟交作者走查
 
 ---
 

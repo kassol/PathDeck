@@ -1,12 +1,12 @@
 # S19–S21 质量加固：writeText 竞态 / 变化归因 / 版本 baseline
 
-> 计划日期：2026-06-16　|　状态：待实现（plan 已 Sir 确认方向，决策 D-a/D-b/D-c/D-d 已批）
+> 计划日期：2026-06-16　|　状态：待实现（plan 已确认方向，决策 D-a/D-b/D-c/D-d 已批）
 > 依赖：S14（归因字段 + VersionStore）、S15（Diff/Restore）、S17（pending buffer + onSurfaceReady）已落地
 > 一份文档，三个独立可合并切片。落地顺序 **S19 → S20 → S21**，每块单独 commit、跑全量单测绿后再进下一块。
 
 ## 1. 背景与目标
 
-S11–S18 的多轮架构审查链反复标记三处「系统性语义脆弱点」——不是偶发 bug，是模型层面就站不住的逻辑。Sir 在 S18 后选择「先深挖清技术债，不追 Beta、不碰新功能」。本计划把三处脆弱点各做到实现级 decision-complete。
+S11–S18 的多轮架构审查链反复标记三处「系统性语义脆弱点」——不是偶发 bug，是模型层面就站不住的逻辑。S18 后选择「先深挖清技术债，不追 Beta、不碰新功能」。本计划把三处脆弱点各做到实现级 decision-complete。
 
 三处债的共性：**核心逻辑都散在 `@Observable` + Timer + 真实系统回调（FSEvents / libghostty）耦合的方法里，无法单测**。因此每块的加固都包含「抽纯函数 → 补临时目录隔离单测」这一外科手术式重构（决策 D-c），把正确性逻辑从不可测的宿主里剥离出来。
 
@@ -248,12 +248,12 @@ enum FileRestore { static func restore(store: VersionStore, path: String, snapsh
 
 新建 tab 的兜底：`createTerminalTab` 时 `currentCwd = initialCwd = model.currentURL`（已是有效 cwd），OSC 7 上报前快照 cwd 即为该值，归因可命中——`buildSnapshots` 必须用 `currentCwd` 而非 nil。
 
-## 9. 待 Sir 拍板的遗留语义抉择（不阻塞落地，按推荐实现，review plan 时顺带定）
+## 9. 待拍板的遗留语义抉择（不阻塞落地，按推荐实现，review plan 时顺带定）
 
 **决策点 1 — 嵌套 cwd 的 tie-break**
 两个 tab，A cwd=`/work`、B cwd=`/work/proj`，事件 `/work/proj/a.txt` 同时命中两者。已批 D-a 字面是「多命中取最近活跃」，可能归给父目录终端 A。但**子目录终端 B 直觉上更可能是写入者**。
 - **我的推荐**：tie-break 改为「优先最深 cwd 前缀，同深度再取最近活跃」（命中集先按 cwd 路径长度降序、再按 lastActive 降序）。只是 `attribute` 内一行排序键调整，更符合直觉。
-- 若 Sir 坚持字面 D-a「纯最近活跃」，去掉路径长度排序键即可。`attributeNestedCwd…` 测试断言按最终定论锁定。
+- 若评审复核坚持字面 D-a「纯最近活跃」，去掉路径长度排序键即可。`attributeNestedCwd…` 测试断言按最终定论锁定。
 
 **决策点 2 — baseline 是否 pin 免清理**
 当前不 pin，靠默认 `maxVersionsPerFile=10`，需 >10 次写盘才可能把 baseline（per-file 第 1 版）淘汰，概率低。
@@ -274,7 +274,7 @@ xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -only-testing:PathDeckTe
 xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -configuration Debug clean build
 ```
 
-不自动启动 GUI app（Sir 自行在 Xcode 跑手动走查）。自动验证限 build + 单测。
+不自动启动 GUI app（作者自行在 Xcode 跑手动走查）。自动验证限 build + 单测。
 
 ---
 

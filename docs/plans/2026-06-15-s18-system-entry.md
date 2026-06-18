@@ -301,6 +301,6 @@ A（Info.plist 独立化 + URL Scheme + AppRouter + 单实例 + reveal）→ B�
 |---|---|---|---|
 | F2 | Open Selection 仅 reveal 首项，低于子切片 B 表格写明的「同父目录多选高亮」 | 实现低于本 plan 规格 | `AppRouter.Route.reveal` 改携带 `[URL]`（单项即长度 1）；`WorkspaceModel.reveal(_ fileURLs:)` 导航首项父目录 + 高亮所有同父目录项、跨父目录项忽略；Services Open Selection 传全部选中 URL。 |
 | F2b | F2 首轮只改到 model 层，多选未落到 `NSTableView`：`scrollToURL: URL?` 仅选单行，selection delegate 又把 model 写回单选 | 修复未触达 UI 层 | 表格选择信号 `scrollToURL: URL?` → `revealSelection: [URL]?`；`FileTableView` 用 `IndexSet` 一次性 `selectRowIndexes`（全部行）+ `scrollRowToVisible`（首项）；单 URL 调用点（变化列表点击定位）退化为长度 1。 |
-| F1 | URL Scheme 未实现 PRD 1214「无权限路径需要用户确认」（本 plan 子切片 A 安全校验段遗漏此验收项，仅覆盖 1213「路径解析安全」） | plan↔PRD 覆盖 gap，范围扩展 | 经 Sir 拍板「仅终端入口确认」：`Route.terminal` 携带 `requireConfirmation`，URL Scheme（外部不可信 deep-link）置 true → 开 shell 前 `NSAlert` 确认；Finder Services「Open Terminal Here」（用户主动）置 false。open/reveal 只读列目录，靠非沙盒 TCC 兜底，不额外确认。 |
+| F1 | URL Scheme 未实现 PRD 1214「无权限路径需要用户确认」（本 plan 子切片 A 安全校验段遗漏此验收项，仅覆盖 1213「路径解析安全」） | plan↔PRD 覆盖 gap，范围扩展 | 经评审复核拍板「仅终端入口确认」：`Route.terminal` 携带 `requireConfirmation`，URL Scheme（外部不可信 deep-link）置 true → 开 shell 前 `NSAlert` 确认；Finder Services「Open Terminal Here」（用户主动）置 false。open/reveal 只读列目录，靠非沙盒 TCC 兜底，不额外确认。 |
 
 > F1 严重性说明：finding 初判 HIGH，复核校准为中等——非沙盒（D1）下系统 TCC 对受保护目录访问自动弹授权已有兜底，PathDeck 外部入口只读导航；最敏感的是 terminal route 在任意目录开 shell，故确认精准作用于该条。统一信任模型（recent/pinned/bookmark 合集对 open/reveal 的信任集外确认）留 S21 Beta 打磨评估。

@@ -4,18 +4,25 @@ import AppKit
 
 @Observable
 final class PinnedFolders {
-    static let shared = PinnedFolders()
+    static let shared = PinnedFolders(userDefaults: .standard)
 
     private let bookmarkKey = "pinnedFolderBookmarks"
     private let legacyKey = "pinnedFolders"
+    private let defaults: UserDefaults
     private(set) var items: [URL] = []
     private var bookmarks: [Data] = []
 
-    private init() {
-        if let stored = UserDefaults.standard.array(forKey: bookmarkKey) as? [Data] {
-            loadFromBookmarks(stored)
-        } else if let paths = UserDefaults.standard.stringArray(forKey: legacyKey) {
+    // 测试入口，业务侧请用 shared
+    init(userDefaults: UserDefaults) {
+        self.defaults = userDefaults
+        if defaults.object(forKey: bookmarkKey) != nil {
+            if let stored = defaults.array(forKey: bookmarkKey) as? [Data] {
+                loadFromBookmarks(stored)
+            }
+        } else if let paths = defaults.stringArray(forKey: legacyKey) {
             migrateLegacy(paths)
+        } else {
+            seedDefaults()
         }
     }
 
@@ -39,6 +46,25 @@ final class PinnedFolders {
 
     func contains(_ url: URL) -> Bool {
         items.contains { $0.standardizedFileURL == url.standardizedFileURL }
+    }
+
+    private func seedDefaults() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let candidates: [URL] = [
+            home.appending(path: "Desktop"),
+            home.appending(path: "Documents"),
+            home.appending(path: "Downloads"),
+            home,
+            URL(fileURLWithPath: "/Applications"),
+        ]
+        for url in candidates {
+            let standardized = url.standardizedFileURL
+            guard FileManager.default.fileExists(atPath: standardized.path(percentEncoded: false)),
+                  let data = createBookmark(for: standardized) else { continue }
+            items.append(standardized)
+            bookmarks.append(data)
+        }
+        persist()
     }
 
     private func loadFromBookmarks(_ stored: [Data]) {
@@ -65,7 +91,7 @@ final class PinnedFolders {
             bookmarks.append(data)
         }
         persist()
-        UserDefaults.standard.removeObject(forKey: legacyKey)
+        defaults.removeObject(forKey: legacyKey)
     }
 
     private func createBookmark(for url: URL) -> Data? {
@@ -86,7 +112,7 @@ final class PinnedFolders {
     }
 
     private func persist() {
-        UserDefaults.standard.set(bookmarks, forKey: bookmarkKey)
+        defaults.set(bookmarks, forKey: bookmarkKey)
     }
 }
 
@@ -95,44 +121,24 @@ struct SidebarView: View {
     var onNavigate: (URL) -> Void
     @State private var pinnedFolders = PinnedFolders.shared
 
-    private static let favorites: [(name: String, icon: String, url: URL)] = {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return [
-            ("Desktop", "menubar.dock.rectangle", home.appending(path: "Desktop")),
-            ("Documents", "doc", home.appending(path: "Documents")),
-            ("Downloads", "arrow.down.circle", home.appending(path: "Downloads")),
-            (NSUserName(), "house", home),
-            ("Applications", "menubar.rectangle", URL(fileURLWithPath: "/Applications")),
-        ]
-    }()
-
     var body: some View {
         List(selection: Binding(
             get: { currentURL.standardizedFileURL },
             set: { if let url = $0 { onNavigate(url) } }
         )) {
             Section("Favorites") {
-                ForEach(Self.favorites, id: \.url) { item in
-                    Label(item.name, systemImage: item.icon)
-                        .tag(item.url.standardizedFileURL)
-                }
-            }
-
-            if !pinnedFolders.items.isEmpty {
-                Section("Pinned") {
-                    ForEach(pinnedFolders.items, id: \.self) { url in
-                        HStack(spacing: 6) {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path(percentEncoded: false)))
-                                .resizable()
-                                .frame(width: 16, height: 16)
-                            Text(url.lastPathComponent)
-                                .lineLimit(1)
-                        }
-                        .tag(url.standardizedFileURL)
-                        .contextMenu {
-                            Button("Remove from Sidebar") {
-                                pinnedFolders.remove(url)
-                            }
+                ForEach(pinnedFolders.items, id: \.self) { url in
+                    HStack(spacing: 6) {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path(percentEncoded: false)))
+                            .resizable()
+                            .frame(width: 16, height: 16)
+                        Text(url.lastPathComponent)
+                            .lineLimit(1)
+                    }
+                    .tag(url.standardizedFileURL)
+                    .contextMenu {
+                        Button("Remove from Sidebar") {
+                            pinnedFolders.remove(url)
                         }
                     }
                 }
