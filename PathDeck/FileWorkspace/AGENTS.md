@@ -35,6 +35,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-18 S29 Convergence：`OutlineDataSource` 新增 `refreshAll`（根+所有展开子目录全量刷新）+ `child(index:of:)` 越界返回 inert placeholder 防崩溃。`WorkspaceModel.reload()` 改用 `refreshAll`（本地操作保留展开态），`navigate()` 独立路径走 `loadRoot`。搜索模式 flat subscript 加 bounds guard。`FSWatcher.stop()` 修复 `deinit` 在自身 queue 上触发 `queue.sync` 死锁（`DispatchSpecificKey` 检测已在目标 queue）。测试修复 `reloadChildrenPrunesDeletedNestedCache` URL 尾部斜杠不匹配。
 - 2026-06-17 S26 目录就地折叠/展开：NSTableView→NSOutlineView 迁移。新增 `OutlineDataSource.swift`（`FileNode` + 树状数据层 + `refreshRoot` 保留展开状态 + `reloadChildren` 裁剪嵌套删除缓存）。`FileTableView` 全面重写 Coordinator（NSOutlineViewDataSource/Delegate），搜索模式 `FlatFileNode` flat 降级 + dirty reload 全量刷新。`FSWatcher` handler 改为 `(Set<String>) -> Void` + `setExpandedDirectories`，模型层所有展开变更同步 watcher scope。拖拽源 local + non-local mask。`WorkspaceModel` 持有 `OutlineDataSource` + `dirtyDirectories` 精确刷新。
 - 2026-06-17 S25 i18n：全量硬编码中文字符串提取为英文 key + zh-Hans 翻译。`FileTableView` 列头 / 右键菜单、`WorkspaceModel` 新建文件夹名、`SearchBarView` 占位文本、`PreviewPane` 元数据标签均走 `String(localized:)` / `LocalizedStringKey`。
 - 2026-06-17 S24 UX Polish：`FileTableView` 列宽 `lastColumnOnlyAutoresizingStyle` + 各列 `minWidth`；移除右键菜单"在 Finder 中显示" + `menuRevealInFinder`；`PreviewPane` 移除 `onRevealInFinder` 参数，"Reveal in Finder" 按钮替换为 "Copy Path"。

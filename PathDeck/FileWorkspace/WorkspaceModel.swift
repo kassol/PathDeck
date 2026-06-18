@@ -84,7 +84,14 @@ final class WorkspaceModel {
         currentURL = url.standardizedFileURL
         searchQuery = ""
         isSearching = false
-        reload()
+        let rawItems = (try? DirectoryLister.list(currentURL, includeHidden: showHidden)) ?? []
+        allItems = Self.sortedItems(rawItems, by: sortColumn, ascending: sortAscending)
+        applySearch()
+        outlineDataSource.sortColumn = sortColumn
+        outlineDataSource.sortAscending = sortAscending
+        outlineDataSource.showHidden = showHidden
+        outlineDataSource.loadRoot(currentURL)
+        syncWatcherExpandedDirs()
         watcher?.watch(directory: currentURL)
     }
 
@@ -185,7 +192,7 @@ final class WorkspaceModel {
         outlineDataSource.sortColumn = sortColumn
         outlineDataSource.sortAscending = sortAscending
         outlineDataSource.showHidden = showHidden
-        outlineDataSource.loadRoot(currentURL)
+        outlineDataSource.refreshAll(currentURL)
         syncWatcherExpandedDirs()
     }
 

@@ -86,6 +86,14 @@ final class OutlineDataSource {
         return nodes
     }
 
+    /// 刷新根层 + 所有已缓存的展开子目录。保留展开状态，内容全量更新。
+    func refreshAll(_ directory: URL) {
+        refreshRoot(directory)
+        for url in Array(childrenCache.keys) {
+            _ = reloadChildren(for: url)
+        }
+    }
+
     var expandedDirectoryURLs: Set<URL> {
         Set(childrenCache.keys)
     }
@@ -99,9 +107,20 @@ final class OutlineDataSource {
         return rootNodes.count
     }
 
+    private static let placeholder = FileNode(FileItem(
+        url: URL(fileURLWithPath: "/.pathdeck-placeholder"),
+        name: "", isDirectory: false, size: nil, modifiedDate: nil, kind: ""))
+
     func child(index: Int, of node: FileNode?) -> FileNode {
         if let node {
-            return childrenCache[node.item.url]![index]
+            guard let children = childrenCache[node.item.url],
+                  index < children.count else {
+                return Self.placeholder
+            }
+            return children[index]
+        }
+        guard index < rootNodes.count else {
+            return Self.placeholder
         }
         return rootNodes[index]
     }

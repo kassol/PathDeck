@@ -165,4 +165,40 @@ struct WorkspaceModelTests {
         let name = WorkspaceModel.newFolderName(in: ["untitled folder", "untitled folder 3"], baseName: "untitled folder")
         #expect(name == "untitled folder 2")
     }
+
+    // MARK: - Reload preserves expansion
+
+    @Test func reloadPreservesExpandedDirectories() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("dir")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+        try "".write(to: sub.appendingPathComponent("child.txt"), atomically: true, encoding: .utf8)
+
+        let model = WorkspaceModel(root: tmp)
+        let dirNode = model.outlineDataSource.rootNodes.first { $0.item.isDirectory }!
+        _ = model.outlineDataSource.loadChildren(for: dirNode)
+        #expect(!model.outlineDataSource.expandedDirectoryURLs.isEmpty)
+
+        model.reload()
+        #expect(!model.outlineDataSource.expandedDirectoryURLs.isEmpty)
+    }
+
+    @Test func navigateClearsExpandedDirectories() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("dir")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+        try "".write(to: sub.appendingPathComponent("child.txt"), atomically: true, encoding: .utf8)
+
+        let model = WorkspaceModel(root: tmp)
+        let dirNode = model.outlineDataSource.rootNodes.first { $0.item.isDirectory }!
+        _ = model.outlineDataSource.loadChildren(for: dirNode)
+        #expect(!model.outlineDataSource.expandedDirectoryURLs.isEmpty)
+
+        model.navigate(to: sub)
+        #expect(model.outlineDataSource.expandedDirectoryURLs.isEmpty)
+    }
 }

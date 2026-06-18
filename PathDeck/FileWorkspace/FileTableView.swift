@@ -273,8 +273,13 @@ struct FileTableView: NSViewRepresentable {
             return self.outlineDataSource.numberOfChildren(of: item as? FileNode)
         }
 
+        private static let flatPlaceholder = FlatFileNode(item: FileItem(
+            url: URL(fileURLWithPath: "/.pathdeck-placeholder"),
+            name: "", isDirectory: false, size: nil, modifiedDate: nil, kind: ""))
+
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             if isSearching {
+                guard index < flatItems.count else { return Self.flatPlaceholder }
                 return FlatFileNode(item: flatItems[index])
             }
             return self.outlineDataSource.child(index: index, of: item as? FileNode)

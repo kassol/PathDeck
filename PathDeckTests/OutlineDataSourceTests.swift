@@ -238,6 +238,76 @@ struct OutlineDataSourceTests {
         #expect(ds.expandedDirectoryURLs.isEmpty)
     }
 
+    @Test func childOutOfBoundsReturnsParentNode() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("dir")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+
+        let ds = OutlineDataSource()
+        ds.loadRoot(tmp)
+        let dirNode = ds.rootNodes.first { $0.item.isDirectory }!
+
+        let result = ds.child(index: 99, of: dirNode)
+        #expect(result.item.url.path(percentEncoded: false) == "/.pathdeck-placeholder")
+    }
+
+    @Test func childRootOutOfBoundsDoesNotCrash() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try "".write(to: tmp.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+
+        let ds = OutlineDataSource()
+        ds.loadRoot(tmp)
+
+        let result = ds.child(index: 99, of: nil)
+        #expect(result.item.url.path(percentEncoded: false) == "/.pathdeck-placeholder")
+    }
+
+    @Test func refreshAllUpdatesExpandedChildren() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("dir")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+        try "".write(to: sub.appendingPathComponent("old.txt"), atomically: true, encoding: .utf8)
+
+        let ds = OutlineDataSource()
+        ds.loadRoot(tmp)
+        let dirNode = ds.rootNodes.first { $0.item.isDirectory }!
+        _ = ds.loadChildren(for: dirNode)
+        #expect(ds.numberOfChildren(of: dirNode) == 1)
+
+        try "".write(to: sub.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
+        ds.refreshAll(tmp)
+
+        #expect(ds.expandedDirectoryURLs.contains(dirNode.item.url))
+        #expect(ds.numberOfChildren(of: dirNode) == 2)
+    }
+
+    @Test func refreshAllPropagatesShowHidden() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sub = tmp.appendingPathComponent("dir")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+        try "".write(to: sub.appendingPathComponent(".hidden"), atomically: true, encoding: .utf8)
+        try "".write(to: sub.appendingPathComponent("visible.txt"), atomically: true, encoding: .utf8)
+
+        let ds = OutlineDataSource()
+        ds.showHidden = false
+        ds.loadRoot(tmp)
+        let dirNode = ds.rootNodes.first { $0.item.isDirectory }!
+        _ = ds.loadChildren(for: dirNode)
+        #expect(ds.numberOfChildren(of: dirNode) == 1)
+
+        ds.showHidden = true
+        ds.refreshAll(tmp)
+        #expect(ds.numberOfChildren(of: dirNode) == 2)
+    }
+
     @Test func showHiddenFilters() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }

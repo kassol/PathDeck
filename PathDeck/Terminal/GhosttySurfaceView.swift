@@ -133,6 +133,7 @@ final class GhosttySurfaceView: NSView {
             releaseHeldModifiers(surface: surface)
             releaseForwardedKeys(surface: surface)
         }
+        clearComposition()
         return super.resignFirstResponder()
     }
 
@@ -164,6 +165,13 @@ final class GhosttySurfaceView: NSView {
             _ = ghostty_surface_key(surface, key)
         }
         forwardedKeyPresses.removeAll()
+    }
+
+    private func clearComposition() {
+        guard markedText != nil, let surface else { return }
+        inputContext?.discardMarkedText()
+        ghostty_surface_preedit(surface, nil, 0)
+        markedText = nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -338,13 +346,8 @@ final class GhosttySurfaceView: NSView {
                event.charactersIgnoringModifiers?.lowercased() == "n" {
                 return super.performKeyEquivalent(with: event)
             }
-            // IME composition 活跃时，只转发 binding（如 Ctrl+C interrupt）
             if markedText != nil {
-                let key = buildInputKey(from: event, action: GHOSTTY_ACTION_PRESS)
-                var bindingFlags = ghostty_binding_flags_e(rawValue: 0)
-                guard ghostty_surface_key_is_binding(surface, key, &bindingFlags) else {
-                    return super.performKeyEquivalent(with: event)
-                }
+                return super.performKeyEquivalent(with: event)
             }
             sendKeyEvent(event, action: GHOSTTY_ACTION_PRESS, surface: surface)
             return true
@@ -383,11 +386,13 @@ final class GhosttySurfaceView: NSView {
         }
 
         let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
-        let key = buildInputKey(from: event, action: action)
-        var bindingFlags = ghostty_binding_flags_e(rawValue: 0)
-        if ghostty_surface_key_is_binding(surface, key, &bindingFlags) {
-            sendKeyEvent(event, action: action, surface: surface)
-            return
+        if markedText == nil {
+            let key = buildInputKey(from: event, action: action)
+            var bindingFlags = ghostty_binding_flags_e(rawValue: 0)
+            if ghostty_surface_key_is_binding(surface, key, &bindingFlags) {
+                sendKeyEvent(event, action: action, surface: surface)
+                return
+            }
         }
 
         currentKeyEvent = event
@@ -401,6 +406,14 @@ final class GhosttySurfaceView: NSView {
                 forwardedKeyPresses.insert(event.keyCode)
             }
             for text in texts {
+                if hadMarkedTextBeforeInterpret {
+                    let scalars = text.unicodeScalars
+                    if let first = scalars.first,
+                       scalars.index(after: scalars.startIndex) == scalars.endIndex,
+                       first.value < 0x20 {
+                        continue
+                    }
+                }
                 var k: ghostty_input_key_s
                 if hadMarkedTextBeforeInterpret {
                     k = ghostty_input_key_s()
@@ -452,6 +465,7 @@ final class GhosttySurfaceView: NSView {
             super.flagsChanged(with: event)
             return
         }
+        if markedText != nil { return }
 
         let keycode = event.keyCode
         guard let mask = Self.modifierKeycodeToMask[keycode] else { return }
