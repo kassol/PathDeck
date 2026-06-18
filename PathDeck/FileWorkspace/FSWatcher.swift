@@ -6,6 +6,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
     /// 除根目录外额外监听的已展开子目录路径集合。
     private var expandedDirectories: Set<String> = []
     let queue = DispatchQueue(label: "in.riverflows.PathDeck.fswatcher", qos: .utility)
+    private static let queueKey = DispatchSpecificKey<Bool>()
     private let handler: @Sendable (Set<String>) -> Void
 
     private var dirtyDirs: Set<String> = []
@@ -14,6 +15,7 @@ nonisolated final class FSWatcher: @unchecked Sendable {
 
     init(handler: @escaping @Sendable (Set<String>) -> Void) {
         self.handler = handler
+        queue.setSpecific(key: Self.queueKey, value: true)
     }
 
     func watch(directory: URL) {
@@ -62,16 +64,21 @@ nonisolated final class FSWatcher: @unchecked Sendable {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         self.stream = nil
-        queue.sync {
-            watchedDirectory = nil
-            expandedDirectories = []
-            flushWork?.cancel()
-            flushWork = nil
-            if !dirtyDirs.isEmpty {
-                let dirs = dirtyDirs
-                dirtyDirs.removeAll()
-                handler(dirs)
+        let cleanup = {
+            self.watchedDirectory = nil
+            self.expandedDirectories = []
+            self.flushWork?.cancel()
+            self.flushWork = nil
+            if !self.dirtyDirs.isEmpty {
+                let dirs = self.dirtyDirs
+                self.dirtyDirs.removeAll()
+                self.handler(dirs)
             }
+        }
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            cleanup()
+        } else {
+            queue.sync(execute: cleanup)
         }
     }
 

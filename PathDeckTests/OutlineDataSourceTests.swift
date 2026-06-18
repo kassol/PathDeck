@@ -114,9 +114,9 @@ struct OutlineDataSourceTests {
 
         // Delete child directory
         try FileManager.default.removeItem(at: child)
-        _ = ds.reloadChildren(for: parent)
+        _ = ds.reloadChildren(for: parentNode.item.url)
 
-        #expect(!ds.expandedDirectoryURLs.contains(child))
+        #expect(!ds.expandedDirectoryURLs.contains(childNode.item.url))
         #expect(ds.expandedDirectoryURLs.count == 1)
     }
 
