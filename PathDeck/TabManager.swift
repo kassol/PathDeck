@@ -141,6 +141,27 @@ final class TabManager {
         fileTabs[idx].isCustomTitle = true
     }
 
+    // MARK: - Tab Reorder
+
+    func moveFileTab(source: UUID, to destinationIndex: Int) {
+        guard let from = fileTabs.firstIndex(where: { $0.id == source }) else { return }
+        let before = fileTabs.map(\.id)
+        fileTabs.moveElement(from: from, to: destinationIndex)
+        if fileTabs.map(\.id) != before { saveTabState() }
+    }
+
+    func moveTerminalSession(in tabID: UUID, source: UUID, to destinationIndex: Int) {
+        guard let tabIdx = fileTabs.firstIndex(where: { $0.id == tabID }) else { return }
+        var ids = fileTabs[tabIdx].terminalSessionIDs
+        guard let from = ids.firstIndex(of: source) else { return }
+        let before = ids
+        ids.moveElement(from: from, to: destinationIndex)
+        if ids != before {
+            fileTabs[tabIdx].terminalSessionIDs = ids
+            saveTabState()
+        }
+    }
+
     // MARK: - Terminal Session Management
 
     func addTerminalSession(_ session: TerminalSession, to tabID: UUID) {

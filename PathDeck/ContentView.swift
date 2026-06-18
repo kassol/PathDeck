@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var isPreviewPaneVisible: Bool = true
     @State private var hasRestoredState: Bool = false
     @State private var closeTabMonitor: Any?
+    @State private var newTabMonitor: Any?
 
     private let router = AppRouter.shared
 
@@ -122,8 +123,8 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
-        .onAppear { setupEngineCallbacks(); restoreState(); handleExternalRoute(); installCloseTabMonitor() }
-        .onDisappear { removeCloseTabMonitor(); tabManager.saveTabState() }
+        .onAppear { setupEngineCallbacks(); restoreState(); handleExternalRoute(); installCloseTabMonitor(); installNewTabMonitor() }
+        .onDisappear { removeCloseTabMonitor(); removeNewTabMonitor(); tabManager.saveTabState() }
         .modifier(StatePersistenceModifier(
             tabManager: tabManager,
             terminalHeight: terminalHeight,
@@ -163,7 +164,8 @@ struct ContentView: View {
                 onSelect: { tabManager.switchTab(to: $0) },
                 onClose: { closeFileTab($0) },
                 onNewTab: { newFileTab() },
-                onRename: { tabManager.renameTab($0, to: $1) }
+                onRename: { tabManager.renameTab($0, to: $1) },
+                onReorder: { tabManager.moveFileTab(source: $0, to: $1) }
             )
 
             if tabManager.activeTabMode == .finderFirst {
@@ -255,7 +257,11 @@ struct ContentView: View {
                     onNewTerminalTab: { createTerminalTab() },
                     onCloseTerminalTab: { closeTerminalTab($0) },
                     onRename: { tabManager.renameTerminalSession($0, to: $1, manual: true) },
-                    onNavigateToCwd: { url in model.navigate(to: url) }
+                    onNavigateToCwd: { url in model.navigate(to: url) },
+                    onReorder: { source, dest in
+                        guard let tabID = tabManager.activeFileTabID else { return }
+                        tabManager.moveTerminalSession(in: tabID, source: source, to: dest)
+                    }
                 )
             }
 
@@ -285,7 +291,11 @@ struct ContentView: View {
                 onNewTab: { createTerminalTab() },
                 onCloseTab: { closeTerminalTab($0) },
                 onRename: { tabManager.renameTerminalSession($0, to: $1, manual: true) },
-                onNavigateToCwd: { url in model?.navigate(to: url) }
+                onNavigateToCwd: { url in model?.navigate(to: url) },
+                onReorder: { source, dest in
+                    guard let tabID = tabManager.activeFileTabID else { return }
+                    tabManager.moveTerminalSession(in: tabID, source: source, to: dest)
+                }
             )
             .frame(width: verticalTabWidth)
 
@@ -374,6 +384,29 @@ struct ContentView: View {
         if let monitor = closeTabMonitor {
             NSEvent.removeMonitor(monitor)
             closeTabMonitor = nil
+        }
+    }
+
+    // MARK: - ⌘T Monitor (context-aware)
+
+    private func installNewTabMonitor() {
+        newTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "t" else {
+                return event
+            }
+            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView {
+                createTerminalTab()
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeNewTabMonitor() {
+        if let monitor = newTabMonitor {
+            NSEvent.removeMonitor(monitor)
+            newTabMonitor = nil
         }
     }
 
@@ -499,6 +532,7 @@ private struct BottomPanelBar: View {
     var onCloseTerminalTab: (UUID) -> Void
     var onRename: (UUID, String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
+    var onReorder: (UUID, Int) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -509,7 +543,8 @@ private struct BottomPanelBar: View {
                 onNewTab: onNewTerminalTab,
                 onCloseTab: onCloseTerminalTab,
                 onRename: onRename,
-                onNavigateToCwd: onNavigateToCwd
+                onNavigateToCwd: onNavigateToCwd,
+                onReorder: onReorder
             )
         }
         .frame(height: 28)

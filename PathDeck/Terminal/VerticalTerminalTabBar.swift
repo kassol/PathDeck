@@ -8,19 +8,24 @@ struct VerticalTerminalTabBar: View {
     var onCloseTab: (UUID) -> Void
     var onRename: (UUID, String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
+    var onReorder: (UUID, Int) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
-                    ForEach(sessions) { session in
+                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                         VerticalTabItem(
                             session: session,
                             isActive: session.id == activeID,
                             onSelect: { onSelect(session.id) },
                             onClose: { onCloseTab(session.id) },
                             onRename: { onRename(session.id, $0) },
-                            onNavigateToCwd: onNavigateToCwd
+                            onNavigateToCwd: onNavigateToCwd,
+                            onDrop: { sourceID, after in
+                                let target = after ? index + 1 : index
+                                onReorder(sourceID, target)
+                            }
                         )
                     }
                 }
@@ -52,10 +57,14 @@ private struct VerticalTabItem: View {
     var onClose: () -> Void
     var onRename: (String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
+    var onDrop: (UUID, Bool) -> Void
 
     @State private var isEditing = false
     @State private var editingTitle = ""
     @State private var isHovering = false
+    @State private var isDropTargeted = false
+    @State private var hoveredEdge: TabDropEdge?
+    @State private var measuredHeight: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 0) {
@@ -101,14 +110,58 @@ private struct VerticalTabItem: View {
             .opacity(isHovering || isActive ? 1 : 0)
         }
         .frame(height: 36)
-        .background(isActive ? Color.accentColor.opacity(0.1) : Color.clear)
+        .background(backgroundColor)
+        .overlay(alignment: .top) {
+            if isDropTargeted, hoveredEdge == .start {
+                Rectangle().fill(Color.accentColor).frame(height: 2)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if isDropTargeted, hoveredEdge == .end {
+                Rectangle().fill(Color.accentColor).frame(height: 2)
+            }
+        }
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { measuredHeight = proxy.size.height }
+                    .onChange(of: proxy.size.height) { _, new in measuredHeight = new }
+            }
+        )
         .contentShape(Rectangle())
+        .draggable(TerminalSessionDragID(id: session.id))
+        .dropDestination(for: TerminalSessionDragID.self) { items, location in
+            guard let source = items.first?.id, source != session.id else { return false }
+            let height = measuredHeight > 0 ? measuredHeight : 1
+            let after = location.y >= height / 2
+            onDrop(source, after)
+            return true
+        } isTargeted: { hovering in
+            isDropTargeted = hovering
+            if !hovering { hoveredEdge = nil }
+        }
         .onTapGesture(count: 2) {
             editingTitle = session.title
             isEditing = true
         }
         .onTapGesture { onSelect() }
         .onHover { isHovering = $0 }
+        .onContinuousHover { phase in
+            guard isDropTargeted else { return }
+            switch phase {
+            case .active(let location):
+                let half = (measuredHeight > 0 ? measuredHeight : 1) / 2
+                hoveredEdge = location.y < half ? .start : .end
+            case .ended:
+                hoveredEdge = nil
+            }
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isDropTargeted, hoveredEdge == nil { return Color.accentColor.opacity(0.18) }
+        if isActive { return Color.accentColor.opacity(0.1) }
+        return Color.clear
     }
 
     private func commitRename() {

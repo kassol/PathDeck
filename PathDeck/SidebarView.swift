@@ -44,6 +44,28 @@ final class PinnedFolders {
         }
     }
 
+    func move(from offsets: IndexSet, to destination: Int) {
+        let sorted = offsets.sorted()
+        var nextItems = items
+        var nextBookmarks = bookmarks
+        var extractedItems: [URL] = []
+        var extractedBookmarks: [Data] = []
+        for idx in sorted.reversed() {
+            guard nextItems.indices.contains(idx) else { continue }
+            extractedItems.insert(nextItems.remove(at: idx), at: 0)
+            extractedBookmarks.insert(nextBookmarks.remove(at: idx), at: 0)
+        }
+        let shifts = sorted.filter { $0 < destination }.count
+        let insertAt = max(0, min(destination - shifts, nextItems.count))
+        nextItems.insert(contentsOf: extractedItems, at: insertAt)
+        nextBookmarks.insert(contentsOf: extractedBookmarks, at: insertAt)
+        if nextItems != items {
+            items = nextItems
+            bookmarks = nextBookmarks
+            persist()
+        }
+    }
+
     func contains(_ url: URL) -> Bool {
         items.contains { $0.standardizedFileURL == url.standardizedFileURL }
     }
@@ -142,6 +164,7 @@ struct SidebarView: View {
                         }
                     }
                 }
+                .onMove { from, to in pinnedFolders.move(from: from, to: to) }
             }
         }
         .listStyle(.sidebar)

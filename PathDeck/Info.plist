@@ -32,6 +32,33 @@
 			<string>Alternate</string>
 		</dict>
 	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>in.riverflows.PathDeck.fileTab</string>
+			<key>UTTypeDescription</key>
+			<string>PathDeck File Tab</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>in.riverflows.PathDeck.terminalSession</string>
+			<key>UTTypeDescription</key>
+			<string>PathDeck Terminal Session</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
 	<key>NSServices</key>
 	<array>
 		<dict>

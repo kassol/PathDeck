@@ -375,4 +375,124 @@ struct TabManagerTests {
         tm.updateTerminalCwd(session.id, to: URL(fileURLWithPath: "/Users"))
         #expect(tm.terminalSessions[session.id]?.currentCwd.standardizedFileURL == URL(fileURLWithPath: "/Users").standardizedFileURL)
     }
+
+    // MARK: - Tab Reorder
+
+    @Test func moveFileTabChangesOrder() {
+        let tm = makeBareManager()
+        let a = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let b = tm.createTab(at: URL(fileURLWithPath: "/Users"))
+        let c = tm.createTab(at: URL(fileURLWithPath: "/"))
+        tm.moveFileTab(source: a, to: 3)
+        #expect(tm.fileTabs.map(\.id) == [b, c, a])
+    }
+
+    @Test func moveFileTabBackwards() {
+        let tm = makeBareManager()
+        let a = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let b = tm.createTab(at: URL(fileURLWithPath: "/Users"))
+        let c = tm.createTab(at: URL(fileURLWithPath: "/"))
+        tm.moveFileTab(source: c, to: 0)
+        #expect(tm.fileTabs.map(\.id) == [c, a, b])
+    }
+
+    @Test func moveFileTabPreservesActiveID() {
+        let tm = makeBareManager()
+        let a = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        _ = tm.createTab(at: URL(fileURLWithPath: "/Users"))
+        tm.switchTab(to: a)
+        tm.moveFileTab(source: a, to: 2)
+        #expect(tm.activeFileTabID == a)
+    }
+
+    @Test func moveFileTabPreservesWorkspaceModels() {
+        let tm = makeBareManager()
+        let a = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let b = tm.createTab(at: URL(fileURLWithPath: "/Users"))
+        let modelA = tm.workspaceModels[a]
+        let modelB = tm.workspaceModels[b]
+        tm.moveFileTab(source: a, to: 2)
+        #expect(tm.workspaceModels[a] === modelA)
+        #expect(tm.workspaceModels[b] === modelB)
+    }
+
+    @Test func moveFileTabInvalidSourceNoop() {
+        let tm = makeBareManager()
+        let a = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let b = tm.createTab(at: URL(fileURLWithPath: "/Users"))
+        tm.moveFileTab(source: UUID(), to: 0)
+        #expect(tm.fileTabs.map(\.id) == [a, b])
+    }
+
+    @Test func moveFileTabSameSlotNoop() {
+        let tm = makeBareManager()
+        let a = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let b = tm.createTab(at: URL(fileURLWithPath: "/Users"))
+        tm.moveFileTab(source: a, to: 0)
+        tm.moveFileTab(source: a, to: 1)
+        #expect(tm.fileTabs.map(\.id) == [a, b])
+    }
+
+    @Test func moveTerminalSessionChangesOrder() {
+        let tm = makeBareManager()
+        let tabID = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let s1 = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        let s2 = TerminalSession(id: UUID(), title: "T2", cwd: URL(fileURLWithPath: "/tmp"))
+        let s3 = TerminalSession(id: UUID(), title: "T3", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(s1, to: tabID)
+        tm.addTerminalSession(s2, to: tabID)
+        tm.addTerminalSession(s3, to: tabID)
+        tm.moveTerminalSession(in: tabID, source: s1.id, to: 3)
+        let tab = tm.fileTabs.first { $0.id == tabID }!
+        #expect(tab.terminalSessionIDs == [s2.id, s3.id, s1.id])
+    }
+
+    @Test func moveTerminalSessionPreservesActiveID() {
+        let tm = makeBareManager()
+        let tabID = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let s1 = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        let s2 = TerminalSession(id: UUID(), title: "T2", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(s1, to: tabID)
+        tm.addTerminalSession(s2, to: tabID)
+        tm.setActiveTerminal(s2.id)
+        tm.moveTerminalSession(in: tabID, source: s2.id, to: 0)
+        let tab = tm.fileTabs.first { $0.id == tabID }!
+        #expect(tab.activeTerminalID == s2.id)
+    }
+
+    @Test func moveTerminalSessionDoesNotMutateSessionsDict() {
+        let tm = makeBareManager()
+        let tabID = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let s1 = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        let s2 = TerminalSession(id: UUID(), title: "T2", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(s1, to: tabID)
+        tm.addTerminalSession(s2, to: tabID)
+        let beforeKeys = Set(tm.terminalSessions.keys)
+        tm.moveTerminalSession(in: tabID, source: s1.id, to: 2)
+        #expect(Set(tm.terminalSessions.keys) == beforeKeys)
+        #expect(tm.terminalSessions[s1.id]?.title == "T1")
+        #expect(tm.terminalSessions[s2.id]?.title == "T2")
+    }
+
+    @Test func moveTerminalSessionInvalidTabNoop() {
+        let tm = makeBareManager()
+        let tabID = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let s1 = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        let s2 = TerminalSession(id: UUID(), title: "T2", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(s1, to: tabID)
+        tm.addTerminalSession(s2, to: tabID)
+        tm.moveTerminalSession(in: UUID(), source: s1.id, to: 2)
+        let tab = tm.fileTabs.first { $0.id == tabID }!
+        #expect(tab.terminalSessionIDs == [s1.id, s2.id])
+    }
+
+    @Test func moveTerminalSessionInvalidSourceNoop() {
+        let tm = makeBareManager()
+        let tabID = tm.createTab(at: URL(fileURLWithPath: "/tmp"))
+        let s1 = TerminalSession(id: UUID(), title: "T1", cwd: URL(fileURLWithPath: "/tmp"))
+        tm.addTerminalSession(s1, to: tabID)
+        tm.moveTerminalSession(in: tabID, source: UUID(), to: 0)
+        let tab = tm.fileTabs.first { $0.id == tabID }!
+        #expect(tab.terminalSessionIDs == [s1.id])
+    }
 }
