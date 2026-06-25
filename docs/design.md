@@ -29,7 +29,7 @@
 
 ### 1.1 色彩系统
 
-双外观（Dark 默认 / Light）。表面、文字、分隔线随外观切换；强调色随外观切换；变化语义色固定不变；终端主题改由用户从内置主题库独立选择（§3），不随 App 外观联动。
+双外观（Dark 默认 / Light）。表面、文字、分隔线随外观切换；强调色随外观切换；终端主题改由用户从内置主题库独立选择（§3），不随 App 外观联动。
 
 **表面层级 Surfaces**
 
@@ -63,19 +63,6 @@
 | Selection 高亮 | `rgba(10,108,255,0.22)` | `rgba(10,108,255,0.22)` | 文本 `::selection` |
 
 > 实现注记：`#0a6cff` ≈ `controlAccentColor`/`systemBlue`。优先绑定系统 `NSColor.controlAccentColor`，让强调色随用户系统偏好走；上表是设计默认值。
-
-**变化语义色 Change semantics**（贯穿文件行高亮、变化条目、状态点）
-
-源码内存在两套用色，是分层用色而非冲突——大面积/圆点用鲜艳系统色，小面积文字符号 chip 用加深版以保证在浅色 tint 底上的对比度。两套都保留：
-
-| 状态 | 系统色（dot / 大色块 / swatch）| 文字色（符号 chip / 小面积）| tint 底 |
-|---|---|---|---|
-| Added | `#30d158` | `#1f9d3f` | `rgba(48,209,88,0.13)` |
-| Modified | `#ff9f0a` | `#cf8500` | `rgba(255,159,10,0.13)` |
-| Deleted | `#ff453a` | `#e0382b` | — |
-| Renamed | `#bf5af2` | `#a23bd6` | — |
-
-> 系统色对应 `systemGreen / systemOrange / systemRed / systemPurple`。符号 chip 文字用加深版，chip 底为「文字色 @15% 透明」。
 
 **文件类型标记色 File-type marks**（扩展名 chip：文字色 = 下表，chip 底 = 该色 @15%）
 
@@ -119,7 +106,7 @@
 | Mono sample | 12.5 | — | 终端正文、控件文字 |
 
 实测出现的全部 size：`30 / 17 / 15 / 13 / 12.5 / 12 / 11.5 / 11 / 10.5 / 10 / 8.5`。
-控件文字普遍 `12.5`；列头 `11.5`；徽章/分组标题 `11`；变化条目时间 `10.5`；扩展名 chip `8.5`。
+控件文字普遍 `12.5`；列头 `11.5`；徽章/分组标题 `11`；状态 pill `10.5`；扩展名 chip `8.5`。
 
 **字重映射（SF Pro 可变字重 → AppKit 离散档）**
 
@@ -175,7 +162,7 @@
 | 窗口 | `1180 × 752`，radius 11 |
 | Toolbar 高 | 52 |
 | Sidebar 宽 | 220 |
-| 右侧面板宽 | 312（默认）/ 344（Changes co-star）|
+| 右侧面板宽 | 312 |
 | 底部终端高 | 236 |
 | 右侧终端宽 | 480 |
 | 列表行高 | 30（column 视图行 26）|
@@ -215,16 +202,13 @@
 | **Tag with dot** | gap7 · 12.5 · 前缀 11×11 圆点（语义色）|
 | **Status pill** | padding `2px 8px` · radius8 · bg「语义色@16%」· 文字语义色 10.5/600 · 前缀 5×5 圆点 |
 | **File-type chip（小）** | 19×19 · radius5 · mono 8.5/800；选中行内用 `rgba(255,255,255,0.22)` 底 |
-| **File-type mark（大）** | 38×38 · radius9 · mono 11/800 uppercase · bg「类型色@15%」· 文字类型色 |
-| **Change journal item** | padding `7px 8px` · radius7 · gap10；左 19×19 符号 chip（mono 12/800）；中两行 name 12.5 + path 11 muted；右 time 10.5 muted |
-| **Card / Panel** | bg card · border0.5 · radius16 · padding `26×28` · shadow card；标题 17/680，描述 13 tertiary |
+| **File-type mark（大）** | 38×38 · radius9 · mono 11/800 uppercase · bg「类型色@15%」· 文字类型色 || **Card / Panel** | bg card · border0.5 · radius16 · padding `26×28` · shadow card；标题 17/680，描述 13 tertiary |
 | **App icon** | 72×72 · radius17 · `linear-gradient(160deg,#5e9eff,#3b6fd4)` · shadow app · 内含 40×40 白色 glyph |
 
-**文件列表行三态**（行 h30 · padding `0 8` · radius6 · gap9 · 13）：
+**文件列表行两态**（行 h30 · padding `0 8` · radius6 · gap9 · 13）：
 
 - **default**：无底；文件夹 18px SVG（folder 色）；文件名 weight 560；右侧时间 muted。
 - **selected**：bg accent · 白字；左侧类型 chip（半透明白底）；副列文字 `rgba(255,255,255,0.8)`。
-- **changed**：bg「modified 色@13%」；行首 6×6 圆点（modified 文字色，margin-left −3 外突）；右侧 "Just now"。
 
 ---
 
@@ -251,18 +235,18 @@
 
 **Web → Native 映射要点**
 - `px → pt` 1:1；CSS 变量 → 语义化 `NSColor` / asset catalog（双外观用 `NSColor` 的 light/dark 变体）。
-- 强调色优先绑 `controlAccentColor`，让其随系统偏好；变化语义色优先用 `systemGreen/Orange/Red/Purple`。
+- 强调色优先绑 `controlAccentColor`，让其随系统偏好。
 - 字重就近映射到 `NSFont.Weight`（见 §1.2）。
 - 内联 SVG/符号字符 → SF Symbols + 自定义品牌 asset。
 - 动效设计稿缺失，按系统默认补齐（§1.6）。
 
 **用色待统一**
 - 文件夹色三个相近值（`#3b82f6` / `#5b9bf5` / `#4f93f7`），落地取一。
-- 变化语义色两套（系统色 / 加深文字色）按 §1.1 分层使用，不要二选一。
 
 ---
 
 ## 变更日志
 
+- 2026-06-25 清理 D1 残留：移除已删 Change Journal 的视觉规格（§1.1 变化语义色段 / 组件「Change journal item」/ 文件行 changed 态 / §1.5「Changes co-star」面板宽 / 相关 §1.2 字号注记 / §4 注记），现有代码侧已零引用。
 - 2026-06-25 S33：§3 终端主题从单一固定 Deck Dark 改为多主题系统（6 套内置预设 + 默认 Catppuccin Mocha + 主题画廊），§1.1 与表面表「终端背景固定深色」同步为随主题；色值权威移交 `Terminal/ThemePreset.swift`。
 - 2026-06-13 v0.1：从 `design/` 两份设计稿抽取，交叉核验 metrics/色值/布局后定稿。

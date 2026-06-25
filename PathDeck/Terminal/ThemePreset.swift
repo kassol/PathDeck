@@ -29,7 +29,7 @@ nonisolated struct ThemePreset: Identifiable, Equatable {
     }
 }
 
-/// 内置主题目录（首发 6 套：3 深 + 3 浅）。色板取自成熟开源配色方案。
+/// 内置主题目录（首发 6 套：4 深 + 2 浅）。色板取自成熟开源配色方案。
 nonisolated enum BuiltInThemes {
     static let defaultID = "catppuccin-mocha"
 
