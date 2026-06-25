@@ -67,6 +67,46 @@
         }
       }
     },
+    "Background Blur" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "背景模糊"
+          }
+        }
+      }
+    },
+    "Bar" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "竖线"
+          }
+        }
+      }
+    },
+    "Behavior" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "行为"
+          }
+        }
+      }
+    },
+    "Block" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方块"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "zh-Hans" : {
@@ -88,6 +128,7 @@
       }
     },
     "Changes apply to new terminal tabs." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -137,6 +178,16 @@
         }
       }
     },
+    "Copy on Select" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选中即复制"
+          }
+        }
+      }
+    },
     "Copy Path" : {
       "localizations" : {
         "zh-Hans" : {
@@ -153,6 +204,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建时间"
+          }
+        }
+      }
+    },
+    "Cursor" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光标"
           }
         }
       }
@@ -197,6 +258,16 @@
         }
       }
     },
+    "Empty to restore the directory name." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空可恢复为目录名。"
+          }
+        }
+      }
+    },
     "Favorites" : {
       "localizations" : {
         "zh-Hans" : {
@@ -234,6 +305,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finder-first 模式"
+          }
+        }
+      }
+    },
+    "Font" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字体"
+          }
+        }
+      }
+    },
+    "Font family takes effect in new terminals." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字体族对新建终端生效。"
           }
         }
       }
@@ -421,6 +512,16 @@
         }
       }
     },
+    "Opacity" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透明度"
+          }
+        }
+      }
+    },
     "Open" : {
       "localizations" : {
         "zh-Hans" : {
@@ -491,12 +592,33 @@
         }
       }
     },
+    "Padding" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "边距"
+          }
+        }
+      }
+    },
     "PathDeck" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "PathDeck"
+          }
+        }
+      }
+    },
+    "Preview" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
           }
         }
       }
@@ -537,6 +659,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重命名"
+          }
+        }
+      }
+    },
+    "Rename Workspace" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名工作区"
+          }
+        }
+      }
+    },
+    "Rename Workspace…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名工作区…"
           }
         }
       }
@@ -634,6 +776,26 @@
         }
       }
     },
+    "Size & Opacity" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尺寸与透明度"
+          }
+        }
+      }
+    },
+    "System Default" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统默认"
+          }
+        }
+      }
+    },
     "Tab %lld" : {
       "localizations" : {
         "zh-Hans" : {
@@ -650,6 +812,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标签页"
+          }
+        }
+      }
+    },
+    "Takes effect in new terminals." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对新建终端生效。"
           }
         }
       }
@@ -675,12 +847,32 @@
         }
       }
     },
+    "Text & Font" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文本与字体"
+          }
+        }
+      }
+    },
     "The pathdeck binary is missing from the app bundle. Please rebuild PathDeck." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "App bundle 中缺少 pathdeck 二进制文件。请重新构建 PathDeck。"
+          }
+        }
+      }
+    },
+    "Theme" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题"
           }
         }
       }
@@ -701,6 +893,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换终端"
+          }
+        }
+      }
+    },
+    "Underline" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下划线"
           }
         }
       }

@@ -14,6 +14,9 @@ final class GhosttyTerminalEngine: TerminalEngine {
     var pendingBuffers: [UUID: PendingTextBuffer] = [:]
     var pendingTimeoutTokens: [UUID: UUID] = [:]
     private var observer: NSObjectProtocol?
+    private var appearanceObserver: NSObjectProtocol?
+    /// debounce 外观热重载：连续拖滑块只重载一次。
+    private var appearanceReloadWorkItem: DispatchWorkItem?
     private let registrationID: ObjectIdentifier
 
     init() {
@@ -26,6 +29,12 @@ final class GhosttyTerminalEngine: TerminalEngine {
             self?.handleSurfaceClose()
         }
 
+        appearanceObserver = NotificationCenter.default.addObserver(
+            forName: .terminalAppearanceDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.scheduleAppearanceReload()
+        }
+
         GhosttyApp.shared.registerPwdHandler(id: registrationID) { [weak self] surface, pwd in
             self?.handlePwdChange(surface: surface, pwd: pwd)
         }
@@ -36,7 +45,23 @@ final class GhosttyTerminalEngine: TerminalEngine {
 
     deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        if let appearanceObserver { NotificationCenter.default.removeObserver(appearanceObserver) }
         GhosttyApp.shared.unregisterPwdHandler(id: registrationID)
+    }
+
+    /// 外观偏好变更：debounce 后重建全局 config 并广播到所有活动 surface（热重载，不重建）。
+    private func scheduleAppearanceReload() {
+        appearanceReloadWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            GhosttyApp.shared.reloadConfig()
+            guard let self else { return }
+            for view in self.surfaceViews.values {
+                guard let surface = view.surface else { continue }
+                GhosttyApp.shared.applyCurrentConfig(to: surface)
+            }
+        }
+        appearanceReloadWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 
     func createSession(cwd: URL) -> UUID {

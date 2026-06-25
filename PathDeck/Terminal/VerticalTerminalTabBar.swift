@@ -10,25 +10,41 @@ struct VerticalTerminalTabBar: View {
     var onNavigateToCwd: ((URL) -> Void)?
     var onReorder: (UUID, Int) -> Void
 
+    @State private var hoveredDropIndex: Int?
+
+    private var ownedIDs: Set<UUID> { Set(sessions.map(\.id)) }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 0) {
+                VStack(spacing: TerminalTabStyle.gap) {
                     ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                         VerticalTabItem(
                             session: session,
                             isActive: session.id == activeID,
+                            isShiftedUp: shouldShiftUp(at: index),
+                            isShiftedDown: shouldShiftDown(at: index),
+                            ownedIDs: ownedIDs,
                             onSelect: { onSelect(session.id) },
                             onClose: { onCloseTab(session.id) },
                             onRename: { onRename(session.id, $0) },
                             onNavigateToCwd: onNavigateToCwd,
                             onDrop: { sourceID, after in
                                 let target = after ? index + 1 : index
-                                onReorder(sourceID, target)
+                                withAnimation(TerminalTabStyle.dropSpring) {
+                                    onReorder(sourceID, target)
+                                }
+                                hoveredDropIndex = nil
+                            },
+                            onHoverEdge: { edge in
+                                guard let edge else { hoveredDropIndex = nil; return }
+                                hoveredDropIndex = edge == .start ? index : index + 1
                             }
                         )
                     }
                 }
+                .padding(.vertical, 4)
+                .animation(TerminalTabStyle.shiftSpring, value: hoveredDropIndex)
             }
 
             Divider()
@@ -38,26 +54,42 @@ struct VerticalTerminalTabBar: View {
                     Image(systemName: "plus")
                         .font(.system(size: 11))
                     Text("Terminal")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
+                .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .help("New Terminal")
         }
         .background(.bar)
     }
+
+    private func shouldShiftUp(at index: Int) -> Bool {
+        guard let drop = hoveredDropIndex else { return false }
+        return index >= drop && index > 0
+    }
+
+    private func shouldShiftDown(at index: Int) -> Bool {
+        guard let drop = hoveredDropIndex else { return false }
+        return index < drop
+    }
 }
 
 private struct VerticalTabItem: View {
     let session: TerminalSession
     let isActive: Bool
+    var isShiftedUp: Bool
+    var isShiftedDown: Bool
+    /// 当前 workspace window 拥有的 session ID 集合；drop 时拒绝跨 window 拖入。
+    var ownedIDs: Set<UUID>
     var onSelect: () -> Void
     var onClose: () -> Void
     var onRename: (String) -> Void
     var onNavigateToCwd: ((URL) -> Void)?
     var onDrop: (UUID, Bool) -> Void
+    var onHoverEdge: (TabDropEdge?) -> Void
 
     @State private var isEditing = false
     @State private var editingTitle = ""
@@ -68,57 +100,51 @@ private struct VerticalTabItem: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if isActive {
-                Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(width: 2)
-            } else {
-                Color.clear.frame(width: 2)
-            }
-
             VStack(alignment: .leading, spacing: 2) {
                 if isEditing {
                     TextField("", text: $editingTitle, onCommit: commitRename)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 11))
+                        .font(TerminalTabStyle.titleFont)
                         .onExitCommand { isEditing = false }
                 } else {
                     Text(session.title)
-                        .font(.system(size: 11))
+                        .font(TerminalTabStyle.titleFont)
                         .lineLimit(1)
                 }
-
                 Text(session.currentCwd.lastPathComponent)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .onTapGesture { onNavigateToCwd?(session.currentCwd) }
                     .help(session.currentCwd.path(percentEncoded: false))
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
 
             Spacer(minLength: 0)
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .frame(width: 14, height: 14)
-            .padding(.trailing, 6)
-            .opacity(isHovering || isActive ? 1 : 0)
+            .padding(.trailing, 8)
+            .opacity((isHovering || isActive) ? 1 : 0)
         }
-        .frame(height: 36)
-        .background(backgroundColor)
+        .frame(height: 40)
+        .background(
+            RoundedRectangle(cornerRadius: TerminalTabStyle.cornerRadius, style: .continuous)
+                .fill(backgroundFill)
+        )
         .overlay(alignment: .top) {
             if isDropTargeted, hoveredEdge == .start {
-                Rectangle().fill(Color.accentColor).frame(height: 2)
+                RoundedRectangle(cornerRadius: 1).fill(TerminalTabStyle.dropLineColor).frame(height: 2)
             }
         }
         .overlay(alignment: .bottom) {
             if isDropTargeted, hoveredEdge == .end {
-                Rectangle().fill(Color.accentColor).frame(height: 2)
+                RoundedRectangle(cornerRadius: 1).fill(TerminalTabStyle.dropLineColor).frame(height: 2)
             }
         }
         .background(
@@ -128,17 +154,23 @@ private struct VerticalTabItem: View {
                     .onChange(of: proxy.size.height) { _, new in measuredHeight = new }
             }
         )
+        .padding(.horizontal, 4)
+        .offset(y: isShiftedUp ? -TerminalTabStyle.shiftDistance : (isShiftedDown ? TerminalTabStyle.shiftDistance : 0))
         .contentShape(Rectangle())
-        .draggable(TerminalSessionDragID(id: session.id))
+        .draggable(TerminalSessionDragID(id: session.id)) {
+            TerminalTabDragPreview(title: session.title, isActive: isActive)
+        }
         .dropDestination(for: TerminalSessionDragID.self) { items, location in
-            guard let source = items.first?.id, source != session.id else { return false }
+            // 显式拒绝：源不属于本 window 的 session（跨 window 拖动场景），UI 不再假装接受 drop。
+            guard let source = items.first?.id, source != session.id,
+                  ownedIDs.contains(source) else { return false }
             let height = measuredHeight > 0 ? measuredHeight : 1
             let after = location.y >= height / 2
             onDrop(source, after)
             return true
         } isTargeted: { hovering in
             isDropTargeted = hovering
-            if !hovering { hoveredEdge = nil }
+            if !hovering { hoveredEdge = nil; onHoverEdge(nil) }
         }
         .onTapGesture(count: 2) {
             editingTitle = session.title
@@ -151,17 +183,20 @@ private struct VerticalTabItem: View {
             switch phase {
             case .active(let location):
                 let half = (measuredHeight > 0 ? measuredHeight : 1) / 2
-                hoveredEdge = location.y < half ? .start : .end
+                let edge: TabDropEdge = location.y < half ? .start : .end
+                hoveredEdge = edge
+                onHoverEdge(edge)
             case .ended:
                 hoveredEdge = nil
+                onHoverEdge(nil)
             }
         }
     }
 
-    private var backgroundColor: Color {
-        if isDropTargeted, hoveredEdge == nil { return Color.accentColor.opacity(0.18) }
-        if isActive { return Color.accentColor.opacity(0.1) }
-        return Color.clear
+    private var backgroundFill: AnyShapeStyle {
+        if isActive { return AnyShapeStyle(Color(nsColor: .controlBackgroundColor)) }
+        if isHovering { return AnyShapeStyle(Color(nsColor: .controlBackgroundColor).opacity(0.5)) }
+        return AnyShapeStyle(Color.clear)
     }
 
     private func commitRename() {

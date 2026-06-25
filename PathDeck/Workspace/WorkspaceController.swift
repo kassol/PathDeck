@@ -1,0 +1,206 @@
+import AppKit
+import SwiftUI
+
+/// 一个 NSWindow workspace 单元：持有 WorkspaceModel + TerminalSessionStore + ViewState，
+/// 通过 NSHostingController 挂载 SwiftUI root view。
+/// 多个 controller 经 NSWindow tabbing 合并到同一个 tab 组。
+@MainActor
+final class WorkspaceController: NSWindowController, NSWindowDelegate {
+    let workspace: WorkspaceModel
+    let store: TerminalSessionStore
+    let viewState: WorkspaceViewState
+
+    weak var manager: WorkspaceManager?
+    weak var engine: GhosttyTerminalEngine?
+
+    /// SwiftUI 视图层用的 engine 句柄；engine 由 manager 持 strong ref，本控制器仅 weak。
+    var engineHandle: any TerminalEngine {
+        guard let engine else {
+            fatalError("WorkspaceController used after engine deallocation")
+        }
+        return engine
+    }
+
+    func applySortViaManager(column: String, ascending: Bool) {
+        manager?.applySort(column: column, ascending: ascending)
+    }
+
+    // MARK: - Shortcut monitors (terminal-focus aware + tab switching)
+    //
+    // monitor token 由 controller 持有：view 重复 appear / view tree 重构都不会泄漏，windowWillClose
+    // 兜底 onDisappear 不可靠的场景。安装/拆除幂等。
+
+    private var closeTabMonitor: Any?
+    private var newTabMonitor: Any?
+    private var tabSwitchMonitor: Any?
+
+    func installShortcutMonitors() {
+        removeShortcutMonitors()
+        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "w",
+                  NSApp.keyWindow == self.window else { return event }
+            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView,
+               let sessionID = self.viewState.activeTerminalID {
+                self.closeTerminal(sessionID)
+                return nil
+            }
+            return event
+        }
+        newTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "t",
+                  NSApp.keyWindow == self.window else { return event }
+            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView {
+                self.createTerminal()
+                return nil
+            }
+            return event
+        }
+        tabSwitchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, NSApp.keyWindow == self.window else { return event }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers ?? ""
+            if flags == .command, let n = Int(chars), (1...9).contains(n) {
+                if let tabs = self.window?.tabbedWindows, tabs.indices.contains(n - 1) {
+                    tabs[n - 1].makeKeyAndOrderFront(nil)
+                    return nil
+                }
+                return event
+            }
+            if flags == .control && event.keyCode == 48 {
+                self.window?.selectNextTab(nil)
+                return nil
+            }
+            if flags == [.control, .shift] && event.keyCode == 48 {
+                self.window?.selectPreviousTab(nil)
+                return nil
+            }
+            return event
+        }
+    }
+
+    func removeShortcutMonitors() {
+        if let m = closeTabMonitor { NSEvent.removeMonitor(m); closeTabMonitor = nil }
+        if let m = newTabMonitor { NSEvent.removeMonitor(m); newTabMonitor = nil }
+        if let m = tabSwitchMonitor { NSEvent.removeMonitor(m); tabSwitchMonitor = nil }
+    }
+
+    /// 用 WorkspaceManager.openNewWindow 创建，不直接 init。
+    init(workspace: WorkspaceModel,
+         viewState: WorkspaceViewState,
+         manager: WorkspaceManager,
+         engine: GhosttyTerminalEngine,
+         frame: NSRect? = nil) {
+        self.workspace = workspace
+        self.viewState = viewState
+        self.store = TerminalSessionStore()
+        self.manager = manager
+        self.engine = engine
+
+        let defaultFrame = frame ?? NSRect(x: 0, y: 0, width: 1080, height: 720)
+        let window = NSWindow(
+            contentRect: defaultFrame,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.minSize = NSSize(width: 720, height: 480)
+        window.tabbingIdentifier = WorkspaceController.sharedTabbingIdentifier
+        window.tabbingMode = .preferred
+        if frame == nil {
+            window.center()
+        }
+
+        super.init(window: window)
+        window.delegate = self
+        window.title = workspace.currentURL.lastPathComponent
+
+        let root = WorkspaceRootView(
+            controller: self,
+            preferences: manager.preferences,
+            pinnedFolders: manager.pinnedFolders
+        )
+        window.contentViewController = NSHostingController(rootView: root)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    static let sharedTabbingIdentifier = NSWindow.TabbingIdentifier("in.riverflows.PathDeck.workspace")
+
+    // MARK: - Terminal lifecycle
+
+    @discardableResult
+    func createTerminal(cwdOverride: URL? = nil) -> TerminalSession? {
+        guard let engine else { return nil }
+        let cwd = cwdOverride
+            ?? viewState.terminalAnchorCwd
+            ?? workspace.currentURL
+        let id = engine.createSession(cwd: cwd)
+        let count = store.sessions.count + 1
+        let title = count == 1 ? "Terminal" : "Terminal \(count)"
+        let session = TerminalSession(id: id, title: title, cwd: cwd)
+        store.append(session)
+        viewState.activeTerminalID = id
+        if viewState.terminalAnchorCwd == nil {
+            viewState.terminalAnchorCwd = workspace.currentURL
+        }
+        manager?.persistSession()
+        return session
+    }
+
+    func closeTerminal(_ id: UUID) {
+        guard let engine else { return }
+        engine.closeSession(id)
+        guard store.remove(id) != nil else { return }
+        if viewState.activeTerminalID == id {
+            viewState.activeTerminalID = store.sessions.last?.id
+        }
+        if store.sessions.isEmpty {
+            viewState.terminalAnchorCwd = nil
+            if viewState.mode == .finderFirst {
+                viewState.isTerminalVisible = false
+            }
+        }
+        manager?.persistSession()
+    }
+
+    /// 重命名 terminal session：包装 store.rename + 触发持久化。
+    /// engine 的 OSC title change 与用户手动重命名都走这条路径。
+    func renameTerminal(_ id: UUID, to title: String, manual: Bool) {
+        store.rename(id, to: title, manual: manual)
+        manager?.persistSession()
+    }
+
+    /// 重排 terminal session：包装 store.move + 触发持久化。
+    func reorderTerminal(source: UUID, to destinationIndex: Int) {
+        if store.move(source: source, to: destinationIndex) {
+            manager?.persistSession()
+        }
+    }
+
+    /// 更新 terminal session cwd：包装 store.updateCwd + 触发持久化。
+    func updateTerminalCwd(_ id: UUID, to url: URL) {
+        store.updateCwd(id, to: url)
+        manager?.persistSession()
+    }
+
+    // MARK: - Window delegate
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        manager?.controllerDidBecomeKey(self)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        removeShortcutMonitors()
+        if let engine {
+            for s in store.sessions {
+                engine.closeSession(s.id)
+            }
+        }
+        manager?.controllerWillClose(self)
+    }
+}

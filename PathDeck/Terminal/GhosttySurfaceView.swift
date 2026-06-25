@@ -206,10 +206,11 @@ final class GhosttySurfaceView: NSView {
         ))
         config.userdata = Unmanaged.passUnretained(self).toOpaque()
         config.scale_factor = scaleFactor
-        config.font_size = Float(TerminalDefaults.fontSize)
+        // 新建时直填字号保证即时正确；同一字号也写入 runtime.conf 供热重载（单一真值 = TerminalPreferences）。
+        config.font_size = Float(TerminalPreferences.shared.fontSize)
 
         let cwdPath = (initialCwd ?? FileManager.default.homeDirectoryForCurrentUser).path
-        let shellPath = TerminalDefaults.resolvedShell
+        let shellPath = TerminalPreferences.shared.resolvedShell
 
         var envPairs: [(key: String, value: String)] = [("TERM", "xterm-256color")]
         envPairs.append(contentsOf: ShellIntegration.envVars(for: shellPath))
@@ -323,7 +324,7 @@ final class GhosttySurfaceView: NSView {
         for n in 1...9 {
             s.insert(.init(char: Character("\(n)"), shift: false, option: false))
         }
-        for c: Character in ["t", "n", "p", "."] {
+        for c: Character in ["t", "n", "p", "r", "."] {
             s.insert(.init(char: c, shift: true, option: false))
         }
         s.insert(.init(char: "c", shift: false, option: true))
@@ -735,6 +736,8 @@ extension GhosttySurfaceView: NSTextInputClient {
 
 extension Notification.Name {
     static let ghosttySurfaceDidClose = Notification.Name("ghosttySurfaceDidClose")
+    /// 终端外观偏好变更：`GhosttyTerminalEngine` 观察后重写 runtime.conf + 热重载所有活动 surface。
+    nonisolated static let terminalAppearanceDidChange = Notification.Name("terminalAppearanceDidChange")
 }
 
 private extension NSScreen {

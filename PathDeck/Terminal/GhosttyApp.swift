@@ -59,6 +59,8 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
             NSLog("[PathDeck] ghostty_config_new failed")
             return
         }
+        // 终端外观经受管 runtime.conf 透传（xcframework 无逐键 setter）。先写当前偏好再 load。
+        TerminalConfigWriter.writeCurrent().path.withCString { ghostty_config_load_file(config, $0) }
         ghostty_config_finalize(config)
         self.config = config
 
@@ -116,6 +118,29 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
             return
         }
         self.app = created
+    }
+
+    // MARK: - 外观热重载
+
+    /// 从 runtime.conf 重建全局 config 并应用到 app 级（影响后续新建 surface 的继承基线）。
+    /// 配合 `applyCurrentConfig(to:)` 广播到现存 surface 实现热重载。由 `GhosttyTerminalEngine`
+    /// 在 `.terminalAppearanceDidChange` 时调用（已 debounce）。
+    func reloadConfig() {
+        guard let app else { return }
+        guard let newConfig = ghostty_config_new() else { return }
+        TerminalConfigWriter.writeCurrent().path.withCString { ghostty_config_load_file(newConfig, $0) }
+        ghostty_config_finalize(newConfig)
+        ghostty_app_update_config(app, newConfig)
+        if let old = config { ghostty_config_free(old) }
+        config = newConfig
+    }
+
+    /// 把当前全局 config 增量应用到一个活动 surface（不重建，保留 scrollback/PTY/cwd）。
+    /// libghostty 内部 diff 重算字体/网格/色彩并 reflow。
+    func applyCurrentConfig(to surface: ghostty_surface_t) {
+        guard let config else { return }
+        ghostty_surface_update_config(surface, config)
+        ghostty_surface_refresh(surface)
     }
 
     private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {

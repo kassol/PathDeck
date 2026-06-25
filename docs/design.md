@@ -29,7 +29,7 @@
 
 ### 1.1 色彩系统
 
-双外观（Dark 默认 / Light）。表面、文字、分隔线随外观切换；强调色随外观切换；变化语义色与终端主题固定不变。
+双外观（Dark 默认 / Light）。表面、文字、分隔线随外观切换；强调色随外观切换；变化语义色固定不变；终端主题改由用户从内置主题库独立选择（§3），不随 App 外观联动。
 
 **表面层级 Surfaces**
 
@@ -42,7 +42,7 @@
 | Elevated | `#34343a` | — | 抬升层（如视图分段选中底）|
 | Card | — | `#fbfbfc` | 内容卡片（亮色实测值）|
 | Page | — | `#ececed` | 设计系统稿页面底 |
-| Terminal | `#161618` | `#161618` | 终端背景（固定深色）|
+| Terminal | 见 §3 | 见 §3 | 终端背景随所选主题（默认 Catppuccin Mocha `#1e1e2e`）|
 
 **文字层级 Text**
 
@@ -228,20 +228,22 @@
 
 ---
 
-## 3. 终端主题 Deck Dark（ANSI 16-color）
+## 3. 终端主题 Terminal themes
 
-两种外观下终端均固定深色。
+终端配色独立于 App 双外观，由用户在 Settings → Appearance 的主题画廊（`ThemeGalleryView`）中选择。首发内置 6 套预设（4 深 + 2 浅），默认 **Catppuccin Mocha**：
 
-| 名称 | 值 | 名称 | 值 |
-|---|---|---|---|
-| fg | `#d6d6d6` | bg | `#161618` |
-| red | `#ff6b60` | blue | `#7fb0ff` |
-| green | `#7ee49a` | magenta | `#d79bf5` |
-| yellow | `#ffcf6b` | cyan | `#6bd6d6` |
+| ID | 名称 | 明暗 | bg | fg |
+|---|---|---|---|---|
+| `catppuccin-mocha`（默认）| Catppuccin Mocha | 深 | `#1e1e2e` | `#cdd6f4` |
+| `dracula` | Dracula | 深 | `#282a36` | `#f8f8f2` |
+| `nord` | Nord | 深 | `#2e3440` | `#d8dee9` |
+| `solarized-dark` | Solarized Dark | 深 | `#002b36` | `#839496` |
+| `catppuccin-latte` | Catppuccin Latte | 浅 | `#eff1f5` | `#4c4f69` |
+| `solarized-light` | Solarized Light | 浅 | `#fdf6e3` | `#657b83` |
 
-终端示例额外：prompt 路径绿 `#7ee49a`、链接蓝 `#5e9eff`（下划线）、错误红 `#ff6b60`、灰输出 `#9a9a9a`、内层面板底 `#0f0f11`、光标块用 fg 色。
+每套预设 = 背景 / 前景 / 光标 + 16 色 ANSI palette，色板取自成熟开源配色方案。**完整色值是实现权威，定义在 `PathDeck/Terminal/ThemePreset.swift` 的 `BuiltInThemes`，本文不重复以免漂移。**
 
-> 实现注记：terminfo 经 libghostty 注入，主题色需配置进 `TerminalEngine`。配色与 libghostty 集成细节见 `PathDeck/Terminal/AGENTS.md`。
+> 实现注记：vendored `GhosttyKit.xcframework` 不含 themes 资源、不能按名引用主题（`theme = Dracula` 会失败），故 preset 在 Swift 端展开成显式 `background` / `foreground` / `cursor-color` / `palette = N=#hex`，写入受管 `runtime.conf` 经 `ghostty_config_load_file` 透传。主题/字号/光标切换可热重载活动终端（不重建 surface）。集成与热重载分层见 `PathDeck/Terminal/AGENTS.md`。
 
 ---
 
@@ -262,4 +264,5 @@
 
 ## 变更日志
 
+- 2026-06-25 S33：§3 终端主题从单一固定 Deck Dark 改为多主题系统（6 套内置预设 + 默认 Catppuccin Mocha + 主题画廊），§1.1 与表面表「终端背景固定深色」同步为随主题；色值权威移交 `Terminal/ThemePreset.swift`。
 - 2026-06-13 v0.1：从 `design/` 两份设计稿抽取，交叉核验 metrics/色值/布局后定稿。

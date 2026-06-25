@@ -10,8 +10,8 @@ struct PathDeckApp: App {
     }
 
     var body: some Scene {
-        Window("PathDeck", id: "main") {
-            ContentView()
+        Settings {
+            SettingsView()
         }
         .commands {
             CLICommands()
@@ -20,56 +20,23 @@ struct PathDeckApp: App {
             FileCommands()
             ViewCommands()
         }
-
-        Settings {
-            SettingsView()
-        }
     }
 }
 
-/// App 委托：URL Scheme 在 Apple Event 层拦截（Window scene 不触发 .onOpenURL），
-/// Open With 走 `application(_:open:)`，Finder Services 走 `ServicesProvider`。
-/// 所有入口经 `AppRouter` 投递路由，由 `ContentView` 消费。
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let servicesProvider = ServicesProvider()
-
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        // Window scene 不触发 .onOpenURL，需在 Apple Event 层拦截 kAEGetURL。
-        NSAppleEventManager.shared().setEventHandler(
-            self,
-            andSelector: #selector(handleGetURL(_:withReply:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
-    }
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.servicesProvider = servicesProvider
-    }
-
-    @objc private func handleGetURL(_ event: NSAppleEventDescriptor,
-                                     withReply reply: NSAppleEventDescriptor) {
-        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-              let url = URL(string: urlString),
-              let route = URLSchemeHandler.route(for: url) else { return }
-        AppRouter.shared.request(route)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    /// Open With（CFBundleDocumentTypes）投递的文件夹 file URL。
-    /// URL Scheme 已由 `handleGetURL` 在 Apple Event 层处理，不会到达此方法。
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.isFileURL {
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(
-                atPath: url.path(percentEncoded: false), isDirectory: &isDir
-            ), isDir.boolValue else { continue }
-            AppRouter.shared.request(.open(url.standardizedFileURL))
-        }
-    }
+/// 严格只在 NSApp.keyWindow 是 workspace window 时返回 controller。
+/// Settings / 其他面板为 key 时返回 nil——菜单命令不应作用于后台 workspace。
+@MainActor
+private func keyWorkspaceController() -> WorkspaceController? {
+    NSApp.keyWindow?.windowController as? WorkspaceController
 }
 
-/// CLI 工具安装菜单。
+@MainActor
+private func workspaceManager() -> WorkspaceManager? {
+    (NSApp.delegate as? AppDelegate)?.workspaceManager
+}
+
+// MARK: - CLI
+
 private struct CLICommands: Commands {
     var body: some Commands {
         CommandGroup(after: .appInfo) {
@@ -80,78 +47,136 @@ private struct CLICommands: Commands {
     }
 }
 
-/// 文件 Tab 管理菜单命令。
-private struct TabCommands: Commands {
-    @FocusedValue(\.tabManager) private var tabManager
+// MARK: - Tab commands (NSWindow tabbing)
 
+private struct TabCommands: Commands {
     var body: some Commands {
         CommandMenu("Tabs") {
             Button("New Tab") {
-                guard let tm = tabManager, let model = tm.activeModel else { return }
-                tm.createTab(at: model.currentURL)
+                guard let manager = workspaceManager() else { return }
+                let cwd = manager.keyController?.workspace.currentURL
+                    ?? FileManager.default.homeDirectoryForCurrentUser
+                manager.openNewWindow(cwd: cwd, tabbedTo: manager.keyController?.window)
             }
             .keyboardShortcut("t")
 
             Divider()
 
+            // Next/Previous Tab 的快捷键由 WorkspaceRootView 的 NSEvent monitor 处理（严格 keyWindow），
+            // 此处仅保留 menu item 文字（带兜底点击响应），不绑 SwiftUI keyboardShortcut。
             Button("Next Tab") {
-                tabManager?.switchToNextTab()
+                keyWorkspaceController()?.window?.selectNextTab(nil)
             }
-            .keyboardShortcut(.tab, modifiers: .control)
-
             Button("Previous Tab") {
-                tabManager?.switchToPreviousTab()
+                keyWorkspaceController()?.window?.selectPreviousTab(nil)
             }
-            .keyboardShortcut(.tab, modifiers: [.control, .shift])
 
             Divider()
 
+            Button("Rename Workspace…") {
+                renameActiveWorkspace()
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+
+            Divider()
+
+            // 1..9 menu items 仅显示，不绑 SwiftUI keyboardShortcut；快捷键由 WorkspaceRootView
+            // 的 NSEvent local monitor 显式拦截、严格针对 keyWindow workspace（避免 Settings 为 key
+            // 时通过 fallback 操作后台 workspace）。
             ForEach(1...9, id: \.self) { n in
                 Button("Tab \(n)") {
-                    tabManager?.switchToTabByIndex(n - 1)
+                    selectTab(at: n - 1)
                 }
-                .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
             }
         }
     }
+
+    @MainActor
+    private func selectTab(at index: Int) {
+        guard let tabs = keyWorkspaceController()?.window?.tabbedWindows,
+              tabs.indices.contains(index) else { return }
+        tabs[index].makeKeyAndOrderFront(nil)
+    }
+
+    @MainActor
+    private func renameActiveWorkspace() {
+        guard let controller = keyWorkspaceController() else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Rename Workspace")
+        alert.informativeText = String(localized: "Empty to restore the directory name.")
+        alert.addButton(withTitle: String(localized: "Rename"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = controller.viewState.customTitle ?? controller.workspace.currentURL.lastPathComponent
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            controller.viewState.isCustomTitle = false
+            controller.viewState.customTitle = nil
+            controller.window?.title = controller.workspace.currentURL.lastPathComponent
+        } else {
+            controller.viewState.isCustomTitle = true
+            controller.viewState.customTitle = trimmed
+            controller.window?.title = trimmed
+        }
+        controller.manager?.persistSession()
+    }
 }
 
-/// 终端菜单命令。
+// MARK: - Terminal commands
+
 private struct TerminalCommands: Commands {
-    @FocusedValue(\.tabManager) private var tabManager
-    @FocusedValue(\.sendPathAction) private var sendPathAction
-    @FocusedValue(\.createTerminalAction) private var createTerminal
+    @FocusedValue(\.activeWorkspaceController) private var focused
 
     var body: some Commands {
         CommandMenu("Terminal") {
             Button("Toggle Terminal") {
-                tabManager?.toggleTerminalVisibility()
+                guard let c = keyWorkspaceController() else { return }
+                c.viewState.isTerminalVisible.toggle()
             }
             .keyboardShortcut("`", modifiers: .control)
 
             Button("New Terminal") {
-                createTerminal?()
+                guard let c = keyWorkspaceController() else { return }
+                c.createTerminal()
+                if !c.viewState.isTerminalVisible { c.viewState.isTerminalVisible = true }
             }
             .keyboardShortcut("n", modifiers: [.control, .shift])
 
             Button("Send Path to Terminal") {
-                guard let urls = tabManager?.activeModel?.selectedURLs, !urls.isEmpty else { return }
-                sendPathAction?(urls)
+                sendPath()
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(tabManager?.activeModel?.selectedURLs.isEmpty ?? true)
+            .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
         }
+    }
+
+    @MainActor
+    private func sendPath() {
+        guard let c = keyWorkspaceController(),
+              !c.workspace.selectedURLs.isEmpty else { return }
+        if !c.viewState.isTerminalVisible {
+            c.viewState.isTerminalVisible = true
+            if c.store.sessions.isEmpty { c.createTerminal() }
+        }
+        guard let activeID = c.viewState.activeTerminalID else { return }
+        let escaped = ShellEscape.escapeMultiple(
+            c.workspace.selectedURLs.map { $0.path(percentEncoded: false) }
+        )
+        DispatchQueue.main.async { c.engineHandle.writeText(escaped, to: activeID) }
     }
 }
 
-/// 文件操作菜单命令：打开文件夹 + 最近打开 + 新建文件夹 + 废纸篓。
+// MARK: - File commands
+
 private struct FileCommands: Commands {
-    @FocusedValue(\.workspaceModel) private var model
+    @FocusedValue(\.activeWorkspaceController) private var focused
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Open Folder…") {
-                model?.openFolder()
+                keyWorkspaceController()?.workspace.openFolder()
             }
             .keyboardShortcut("o")
 
@@ -162,7 +187,7 @@ private struct FileCommands: Commands {
                 } else {
                     ForEach(recent, id: \.self) { url in
                         Button(abbreviatedPath(url)) {
-                            model?.navigate(to: url)
+                            keyWorkspaceController()?.workspace.navigate(to: url)
                         }
                     }
                     Divider()
@@ -175,16 +200,16 @@ private struct FileCommands: Commands {
             Divider()
 
             Button("New Folder") {
-                model?.newFolder()
+                keyWorkspaceController()?.workspace.newFolder()
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
         CommandMenu("File Actions") {
             Button("Move to Trash") {
-                model?.trashItems()
+                keyWorkspaceController()?.workspace.trashItems()
             }
             .keyboardShortcut(.delete, modifiers: .command)
-            .disabled(model?.selectedURLs.isEmpty ?? true)
+            .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
         }
     }
 
@@ -193,32 +218,30 @@ private struct FileCommands: Commands {
     }
 }
 
-/// 显示菜单命令：隐藏文件切换 + 复制路径。
-private struct ViewCommands: Commands {
-    @FocusedValue(\.tabManager) private var tabManager
-    @FocusedValue(\.togglePreviewPaneAction) private var togglePreviewPane
+// MARK: - View commands
 
+private struct ViewCommands: Commands {
     var body: some Commands {
         CommandMenu("View") {
             Button("Toggle Preview Pane") {
-                togglePreviewPane?()
+                WorkspacePreferences.shared.isPreviewPaneVisible.toggle()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
 
-            Button(LocalizedStringKey(tabManager?.showHidden == true ? "Hide Hidden Files" : "Show Hidden Files")) {
-                tabManager?.toggleHidden()
+            Button(LocalizedStringKey(WorkspacePreferences.shared.showHidden ? "Hide Hidden Files" : "Show Hidden Files")) {
+                workspaceManager()?.toggleHidden()
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .textEditing) {
             Button("Find…") {
-                tabManager?.activeModel?.isSearching = true
+                keyWorkspaceController()?.workspace.isSearching = true
             }
             .keyboardShortcut("f")
         }
         CommandGroup(after: .pasteboard) {
             Button("Copy Current Path") {
-                tabManager?.activeModel?.copyCurrentPath()
+                keyWorkspaceController()?.workspace.copyCurrentPath()
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
         }

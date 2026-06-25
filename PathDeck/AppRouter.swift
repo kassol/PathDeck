@@ -3,10 +3,13 @@ import Observation
 
 /// 外部入口（URL Scheme / Finder Services / 文件夹「打开方式」）归一中介。
 ///
-/// 三类入口的处理器都活在 `ContentView` 的 `@State model` 之外
-/// （`AppDelegate.application(_:open:)` 与 `@objc` 的 `ServicesProvider`），拿不到 model。
-/// 此单例是「model 外 → model」的唯一桥：处理器投递 `Route`，`ContentView` 消费后驱动导航。
-/// `pending` 为一次性令牌，消费即置 nil，避免窗口重建时重放历史路由。
+/// 三类入口的处理器都活在 SwiftUI view tree 之外（`AppDelegate.application(_:open:)` 与
+/// `@objc` 的 `ServicesProvider`），拿不到具体 workspace 引用。
+/// 此单例是「外部入口 → WorkspaceManager」的唯一桥：处理器 enqueue `Route`，`AppDelegate.drainPendingRoutes`
+/// 用 `withObservationTracking` 持续 drain 并经 `WorkspaceManager` 匹配 cwd 激活已有 window 或新建合入。
+/// `pending` 是 FIFO 队列（不是单值令牌）——Finder 选中多个文件夹 Open With 会一次投递多条 .open，
+/// 每条都需要打开/激活，不能后覆盖前。
+/// 唯一消费者是 AppDelegate，WorkspaceRootView 不消费 router.pending。
 @Observable
 final class AppRouter {
     static let shared = AppRouter()
@@ -20,20 +23,20 @@ final class AppRouter {
         case terminal(URL, requireConfirmation: Bool)
     }
 
-    private(set) var pending: Route?
+    private(set) var pending: [Route] = []
 
     /// 生产用单例走 ``shared``；非私有以便单测构造隔离实例，避免污染全局令牌。
     init() {}
 
-    /// 由 `AppDelegate` / `ServicesProvider` 调用，投递一条路由请求。
+    /// 由 `AppDelegate` / `ServicesProvider` 调用，enqueue 一条路由请求。
     func request(_ route: Route) {
-        pending = route
+        pending.append(route)
     }
 
-    /// `ContentView` 消费后置 nil（一次性令牌）。无待处理路由返回 nil。
+    /// `AppDelegate.drainPendingRoutes` 消费首项（FIFO），无待处理路由返回 nil。
     @discardableResult
     func consume() -> Route? {
-        defer { pending = nil }
-        return pending
+        guard !pending.isEmpty else { return nil }
+        return pending.removeFirst()
     }
 }

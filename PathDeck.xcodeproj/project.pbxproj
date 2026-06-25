@@ -71,7 +71,9 @@
 			membershipExceptions = (
 				FileWorkspace/AGENTS.md,
 				Info.plist,
+				Settings/AGENTS.md,
 				Terminal/AGENTS.md,
+				Workspace/AGENTS.md,
 			);
 			target = BDA2E86E2FDCEFAF002B9364 /* PathDeck */;
 		};

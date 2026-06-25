@@ -44,29 +44,27 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-`FileWorkspace` 已完成 M1 全部 scope（S1–S7）+ S9 Send Path to Terminal + S10 拖拽到终端 + S16 Preview Pane（右侧文件预览/元数据/Quick Actions）+ FSWatcher（FSEvents 实时监听当前目录文件变化 → reload 列表）；`Terminal` 已完成 S2 冒烟 + S8 面板嵌入主窗口 + S9 文本注入 + S12 多 Terminal Tab（独立 PTY/cwd/scrollback，tab bar 切换/新建/关闭/重命名）+ S16 cwd 同步（OSC 7 → `GHOSTTY_ACTION_PWD` → tab bar 显示当前 cwd + 点击跳转文件浏览器）+ S23 VerticalTerminalTabBar（Terminal-first 模式垂直 Tab 列表）+ S27 Terminal Input Compat（完整键盘/鼠标/IME/剪贴板事件处理，对齐标准终端）。S13 窗口布局骨架：NavigationSplitView 两列（sidebar + detail）+ 底部面板 Terminal。S16 新增 Settings 窗口（Terminal shell/font/scrollback）+ Pinned 升级为 bookmark data 持久化。S17 窗口状态恢复（底部面板/预览面板/排序/terminal tabs 全持久化，重启恢复上次工作场景）+ `writeText` 竞态修复（pending buffer + `onSurfaceReady`）+ 1k/10k 文件性能自动基线（cold-open/sort/filter）。S18 系统入口（M5 Phase 2）：`pathdeck://` URL Scheme + Finder Services + 文件夹「打开方式」三类外部入口经 `AppRouter` 归一到导航，单实例复用。S19–S21 质量加固：终端 writeText 竞态收口（`PendingTextBuffer` 上限 + surface 失败回调 + 多 tab 退出全关）。S22 CLI helper（`pathdeck` 命令行工具，构造 `pathdeck://` URL 经 `/usr/bin/open` 唤起 App，嵌入 app bundle Resources + "Install Command Line Tool…" 菜单安装到 `/usr/local/bin/`）。M5 闭合。D1 Dogfood：移除 Change Journal 全栈（UI + SQLite + 版本快照 + 终端归因 + Diff），FSWatcher 迁入 FileWorkspace/ 简化为纯信号通知，移除 GRDB 依赖。S23 文件 Tab + Terminal-first 模式：FileTab 多目录并行 + TabManager 状态管理 + anchor cwd 一对多绑定 + Finder-first/Terminal-first per-tab 双模式 + ⌘W NSEvent local monitor 三层优先级。S26 目录就地折叠/展开：NSTableView→NSOutlineView 迁移 + OutlineDataSource 树状数据层 + FileNode 引用包装 + FSWatcher 多目录匹配。S25 i18n 多语言支持：`Localizable.xcstrings` String Catalog（en + zh-Hans），72 条目全量本地化（S30 删除未引用的 `Pinned` 条目）。S24 UX Polish：文件列表列宽自适应（lastColumnOnlyAutoresizing）+ 垂直 tab bar 分隔线可拖动（100–300pt，持久化）+ 终端 tab 标题跟随 OSC title 自动更新（手动重命名优先、清空恢复）+ 移除 Reveal in Finder（替换为 Copy Path）。S28 Quality Gate：FSWatcher 边界测试 + PRD D1 同步。S29 Convergence：OutlineDataSource 崩溃防御（inert placeholder）+ 本地操作保留展开态（`refreshAll`）+ IME 合成期对齐 Ghostty 原生（合成中 `interpretKeyEvents` 优先、控制符抑制、`flagsChanged` 跳过）+ FSWatcher deadlock 修复。S30 Sidebar Merge：Favorites 静态块合入 Pinned，首次启动 seed 五项默认入口（Desktop/Documents/Downloads/Home/Applications），统一为单一 Favorites section，用户删空后不再自动恢复。S31 Reorder：Sidebar Favorites（`List.onMove`）+ 文件 Tab Bar + Terminal Tab Bar（横/纵）三域手动拖拽排序，各自 Transferable payload（`FileTabDragID` / `TerminalSessionDragID`）跨域隔离，复用既有持久化通道。
+四个已落地模块：`FileWorkspace`（文件工作台）/ `Terminal`（libghostty 终端）/ `Workspace`（NSWindow tabbing + per-window 状态）/ `Settings`（外观偏好）。当前能力：多 NSWindow workspace（系统级 tabbing，拖出/合并/Mission Control）+ 目录就地展开/折叠 + 多终端 tab + 文件↔Terminal cwd 双向桥 + 6 套终端主题热重载 + i18n（en/zh-Hans）+ 系统入口（`pathdeck://` / Finder Services / Open With / CLI）。逐 sprint scope 见文末变更日志与各子目录 AGENTS.md。
 
 ```
 PathDeck/                  App 源码
-PathDeck/PathDeckApp.swift @main（Window scene 单窗口，防 WindowGroup 重复开窗）+ AppDelegate（kAEGetURL 拦截 URL Scheme + application(_:open:) Open With + Services 注册）
-PathDeck/ContentView.swift NavigationSplitView 主布局 + FileTabBar + 双模式布局（Finder-first/Terminal-first）+ VerticalDividerView（垂直 tab bar 拖动分隔线）+ NSEvent local monitor ⌘W（终端焦点关终端/多 Tab 关 Tab/单 Tab 关窗口）+ ⌘T（终端焦点新建终端 tab，否则放行让 SwiftUI menu 新建文件 tab）+ 消费 AppRouter
-PathDeck/FileTab.swift     FileTab 值类型（id/title/mode/isTerminalVisible/anchorCwd/terminalSessionIDs）+ FileTabState（Codable 持久化）
-PathDeck/TabManager.swift  @Observable 多 Tab 状态管理：FileTab CRUD + WorkspaceModel 多实例 + 终端 session per-tab 绑定 + anchor cwd 生命周期 + 全局偏好（sort/showHidden）+ per-tab 双模式 + 持久化
-PathDeck/FileTabBar.swift  横向文件 Tab bar UI（28pt，切换/新建/关闭/重命名）
+PathDeck/PathDeckApp.swift @main（Settings scene 唯一 SwiftUI scene + 五组 CommandMenu）；workspace window 完全由 `AppDelegate` 经 AppKit 自管
+PathDeck/AppDelegate.swift NSApplicationDelegate：启动构造 `WorkspaceManager` + `restoreSession` + `NSWindow.allowsAutomaticWindowTabbing = false`；kAEGetURL 拦截 URL Scheme + `application(_:open:)` Open With + Services 注册；`AppRouter.pending` FIFO 队列由 `drainPendingRoutes` 循环消费（命中 cwd 已有 window 激活，否则新建合入；`withObservationTracking` 注册后续 observation）
+PathDeck/Workspace/        Workspace 模块（NSWindow tabbing 接管 + per-window 状态拆分），见其 AGENTS.md
 PathDeck/SidebarView.swift Sidebar（统一 Favorites 区块，`List.onMove` 手动重排）+ PinnedFolders bookmark 持久化（首次启动 seed 默认五项，删空不恢复）
-PathDeck/ReorderTransferables.swift  三域 reorder 自定义 UTType（`pathDeckFileTab` / `pathDeckTerminalSession`）+ `FileTabDragID` / `TerminalSessionDragID` Transferable 类型 + `TabDropEdge` enum
+PathDeck/ReorderTransferables.swift  Terminal session reorder 自定义 UTType（`pathDeckTerminalSession`）+ `TerminalSessionDragID` Transferable 类型 + `TabDropEdge` enum
 PathDeck/ArrayMove.swift     Foundation-only `Array.moveElement(from:to:)`（SwiftUI 单元素 move 语义等价，让模型层不吃 SwiftUI 框架）
-PathDeck/AppRouter.swift   外部入口（URL Scheme/Services/Open With）归一中介，@Observable 一次性令牌
+PathDeck/AppRouter.swift   外部入口（URL Scheme/Services/Open With）归一中介，@Observable FIFO 路由队列（Finder 多选 Open With 一次 enqueue 多条 `.open`，由 `AppDelegate.drainPendingRoutes` 循环消费）
 PathDeck/URLSchemeHandler.swift  pathdeck:// 解析 + 安全校验（查询参数式，目录/存在性校验）
 PathDeck/ServicesProvider.swift  Finder Services @objc handler（NSPasteboard → AppRouter.Route）
 PathDeck/CLIInstaller.swift "Install Command Line Tool…" 菜单逻辑（原子 replace 到 /usr/local/bin/ + shell-escaped sudo 提示）
-PathDeck/Info.plist        URL Scheme / NSServices / CFBundleDocumentTypes / UTExportedTypeDeclarations（`in.riverflows.PathDeck.fileTab` / `terminalSession`，SwiftUI `.draggable` / `.dropDestination` 须 plist 注册才能跨 NSItemProvider 桥接）/ 单实例（synchronized group 排除，靠 INFOPLIST_FILE 引用）
+PathDeck/Info.plist        URL Scheme / NSServices / CFBundleDocumentTypes / UTExportedTypeDeclarations（`in.riverflows.PathDeck.terminalSession`，SwiftUI `.draggable` / `.dropDestination` 须 plist 注册才能跨 NSItemProvider 桥接）/ 单实例（synchronized group 排除，靠 INFOPLIST_FILE 引用）
 CLI/                       pathdeck 命令行工具 target（pathdeck-cli，product name: pathdeck）
 CLI/main.swift             CLI 入口：解析参数 → CLICommand.parse → /usr/bin/open pathdeck://
 CLI/CLICommand.swift       参数解析 + URL 构造纯函数（synchronized group 同时编译到 PathDeck app target 供单测，main.swift 经 membershipExceptions 排除）
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图、Preview Pane、FSWatcher），见其 AGENTS.md
-PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议 + cwd 同步），见其 AGENTS.md
-PathDeck/Settings/         Settings 窗口（Terminal 偏好设置）
+PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议 + cwd 同步 + 外观/主题偏好透传），见其 AGENTS.md
+PathDeck/Settings/         Settings 窗口（左分类右详情：Appearance 主题画廊+字体/透明度 / Terminal shell+scrollback），见其 AGENTS.md
 PathDeck.xcodeproj/        Xcode 工程
 PathDeckTests/             单元测试
 PathDeckUITests/           UI 测试
@@ -77,7 +75,7 @@ docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需
 design/                    设计稿源文件（standalone HTML，可浏览器打开看可视参考），不进 build
 ```
 
-规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal` 已落地；`ChangeJournal` 已在 D1 Dogfood 中移除）。
+规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal`、`Workspace` 已落地；`ChangeJournal` 已在 D1 Dogfood 中移除）。
 
 ### Sidebar 扩展路线
 
@@ -168,7 +166,7 @@ xcodebuild -deleteComponent MetalToolchain
 - 外科手术式修改：每行改动可追溯到明确需求，不顺手重构 / 改格式 / 动死代码。
 - 里程碑式提交；commit message 用英文，第三方可读产出物中不出现个人称谓。
 - 改完跑构建 + 测试（涉及 synchronized group 资源变动时用 **clean build**：同名 resource 冲突等问题增量 build 不暴露）。
-- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `FileWorkspace/AGENTS.md`、`Terminal/AGENTS.md`、`Info.plist`。
+- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `FileWorkspace/AGENTS.md`、`Workspace/AGENTS.md`、`Terminal/AGENTS.md`、`Settings/AGENTS.md`、`Info.plist`。
 - i18n：用户可见字符串用英文 key，SwiftUI 直接写字面量（`Text("Key")`、`.help("Key")`）自动走 `LocalizedStringKey`；AppKit 用 `String(localized: "Key")`。翻译在 `Localizable.xcstrings`（String Catalog，en + zh-Hans）。条件文案用 `LocalizedStringKey(condition ? "A" : "B")`（三元返回 `String` 不走自动本地化）。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
@@ -176,6 +174,8 @@ xcodebuild -deleteComponent MetalToolchain
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-06-25 **S33 Terminal Appearance + Hot Reload**：终端外观升级为 6 套内置主题画廊 + 字体族/字号/cursor/padding/透明度/模糊/copy-on-select，经受管 `runtime.conf` 透传（vendored xcframework 无逐键 setter，只能写文件 → `ghostty_config_load_file`）。热重载分层：主题/字号/光标/copy-on-select 实时作用活动 surface 不重建（保 scrollback/PTY/cwd），font-family/padding/透明度/scrollback/shell 仅新建终端生效（设置面板 footer 如实标注）。新增 `Terminal/TerminalPreferences` / `TerminalConfigWriter` / `ThemePreset`；Settings 重构为左分类右详情 + `ThemeGalleryView`。详见 `docs/plans/2026-06-25-s33-terminal-appearance-hot-reload.md` 与 `Terminal/`、`Settings/` AGENTS.md。
+- 2026-06-18 **S32 NSWindow Tabbing**：文件 tab 升级为系统级 NSWindow tabbing —— 每个文件 tab 是独立 `WorkspaceController: NSWindowController`（统一 `tabbingIdentifier` + `tabbingMode = .preferred` 自动合并），免费拿到拖出/合并/Mission Control/Window menu/`Cmd+1..9`/视觉随系统升级。删 `TabManager` / `FileTab` / `FileTabBar` / `ContentView` 自绘 tab 栈及测试；状态拆为全局 `WorkspacePreferences` + per-window `WorkspaceController`（含 `WorkspaceModel` / `TerminalSessionStore` / `WorkspaceViewState`）；`AppDelegate` 拆出独立文件接管 window 生命周期 + URL/Services/Open With drain；`AppRouter` 跨 window 匹配 cwd 激活 vs 新建合入；旧 `fileTabsState` 一次性迁移到 `workspaceSessionState`；terminal 横/纵 tab 视觉对齐 NSWindowTab token。详见 `docs/plans/2026-06-18-s32-nswindow-tabbing.md` 与 `Workspace/`、`Terminal/` AGENTS.md。
 - 2026-06-18 **S31 Reorder**：Sidebar Favorites + 文件 Tab Bar + Terminal Tab Bar（横/纵）三域手动拖拽排序。`PinnedFolders.move(from:to:)` Foundation-only 多元素 extract-then-insert 同序重排 items 与 bookmarks 后 `persist()`，`SidebarView` ForEach 挂 `.onMove`。新增 `ReorderTransferables.swift` 定义 `pathDeckFileTab` / `pathDeckTerminalSession` UTType（`conformingTo: .data` + Info.plist `UTExportedTypeDeclarations` 注册）+ `FileTabDragID` / `TerminalSessionDragID` 两个 Codable Transferable 类型 + `TabDropEdge` enum（.start/.end），靠类型系统跨域隔离。新增 `ArrayMove.swift` Foundation-only `Array.moveElement(from:to:)` 单元素 helper（与 SwiftUI `move(fromOffsets:toOffset:)` 单元素语义等价），让 `TabManager` 状态模型层不吃 SwiftUI 框架。`TabManager.moveFileTab(source:to:)` / `moveTerminalSession(in:source:to:)` 只动数组顺序，`WorkspaceModel` / `TerminalSession` / PTY / surface 实例不重建，active ID / anchor cwd 保留，noop 时不触发 `saveTabState()`（避免无意义持久化；`StatePersistenceModifier` 只监听 `count`，reorder 不会自动触发）。`FileTabBar` / `TerminalTabBar` / `VerticalTerminalTabBar` 接入 `.draggable(payload)` + `.dropDestination(for:)`，dropDestination 内 `source == target` 短路替代条件包装守卫（先前 `if allowed { .draggable } else { content }` ViewModifier 形式被验证会打断 `.draggable` 初始化）：横向按 `location.x < width/2` 判 before/after，纵向按 `location.y < height/2`；hover 期 `onContinuousHover` 实时 location 半区切 `hoveredEdge: TabDropEdge?`，hovered 边（`== .start` / `== .end`，nil 时不画方向线避免与 drop 落点矛盾）显 2pt accent 插入线（横向 leading/trailing、纵向 top/bottom），hoveredEdge=nil 时落到 hover 高亮兜底（onContinuousHover 不 fire 也能识别"目标 tab 被命中"）；GeometryReader 量测自身尺寸。`ContentView` 加 ⌘T `NSEvent.addLocalMonitorForEvents`：firstResponder is `GhosttySurfaceView` 时拦截 → `createTerminalTab()`，否则放行让 SwiftUI menu 创建文件 tab（与 ⌘W monitor 同模式）。新增 `PinnedFoldersReorderTests`（5 例）+ `TabManagerTests` 追加 11 例 reorder。
 - 2026-06-18 **S30 Sidebar Merge**：`PinnedFolders` 增 `init(userDefaults:)` 注入入口 + `seedDefaults()` 首次启动 seed 五项默认（Desktop/Documents/Downloads/Home/Applications），seed 判定基于 `UserDefaults.object(forKey:) != nil` 区分"首次启动"与"用户删空"。`SidebarView` 删除静态 Favorites 数组与双 section 结构，合并为单一 `Section("Favorites")` 渲染 `pinnedFolders.items`，视觉沿用 `NSWorkspace.shared.icon` 系统彩色图标。`Localizable.xcstrings` 删除未引用的 `Pinned` 条目（73→72）。新增 4 个 seed/migrate/idempotent 单测。
 - 2026-06-18 **S29 Convergence**：崩溃防御（OutlineDataSource `child(index:of:)` inert placeholder + 搜索模式 flat guard）+ 本地操作保留展开态（`reload()` 改用 `refreshAll`、`navigate()` 独立路径 `loadRoot`）+ IME 合成期按键对齐 Ghostty 原生（合成中 Ctrl+key 流向 `interpretKeyEvents` 让 IME 先处理、binding 快速路径 `markedText==nil` 守卫、合成期控制符 <0x20 抑制、`flagsChanged` 合成期跳过、`clearComposition()` 仅 `resignFirstResponder` 清残留）+ FSWatcher `stop()` deadlock 修复（`DispatchSpecificKey` 检测已在目标 queue）。200 测试。
