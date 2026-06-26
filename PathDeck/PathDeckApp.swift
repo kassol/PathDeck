@@ -52,6 +52,9 @@ private struct CLICommands: Commands {
 private struct TabCommands: Commands {
     var body: some Commands {
         CommandMenu("Tabs") {
+            // Cmd+T 实际由 WorkspaceRootView 的 newTabMonitor 接管（终端焦点 → 新终端 session，
+            // 文件焦点 → 新 workspace tab）；此处 action + keyboardShortcut 仅用于菜单显示 ⌘T，以及
+            // Settings/alert 为 key 时的兜底（monitor 严格 keyWindow，那时 return event 放行给本 action）。
             Button("New Tab") {
                 guard let manager = workspaceManager() else { return }
                 let cwd = manager.keyController?.workspace.currentURL

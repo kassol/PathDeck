@@ -57,7 +57,13 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
                 self.createTerminal()
                 return nil
             }
-            return event
+            // 焦点不在终端（文件列表等）：开新 workspace 窗口 tab。不能 return event 依赖 SwiftUI
+            // .keyboardShortcut("t")——手动 NSWindow + 无 WindowGroup 架构下，first responder 为纯
+            // AppKit NSView（FileNSOutlineView）时该 command 不派发，Cmd+T 会落空（同 Next/Prev/
+            // Cmd+1..9 已知问题，故一并走 monitor）。keyWindow 非 workspace 时上面 guard 已 return
+            // event，仍由 SwiftUI keyboardShortcut 兜底（Settings 焦点退到 lastActive 开新 tab）。
+            self.manager?.openNewWindow(cwd: self.workspace.currentURL, tabbedTo: self.window)
+            return nil
         }
         tabSwitchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, NSApp.keyWindow == self.window else { return event }
