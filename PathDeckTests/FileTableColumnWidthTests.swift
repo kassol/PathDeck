@@ -55,6 +55,55 @@ struct FileTableColumnWidthTests {
     }
 
     @Test
+    func savedColumnWidthAppliedOnNewWindow() throws {
+        let dir = try makeTempDir(files: ["a.txt"])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let manager = makeManager()
+        manager.preferences.columnWidths = ["name": 333, "size": 72]
+        let c = manager.openNewWindow(cwd: dir)
+        defer { c.close() }
+
+        let ov = try #require(waitForOutlineView(in: c.window))
+        #expect(try #require(ov.tableColumn(withIdentifier: .init("name"))).width == 333)
+        #expect(try #require(ov.tableColumn(withIdentifier: .init("size"))).width == 72)
+    }
+
+    @Test
+    func columnResizeWritesBackToPreferences() throws {
+        let dir = try makeTempDir(files: ["a.txt"])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let manager = makeManager()
+        let c = manager.openNewWindow(cwd: dir)
+        defer { c.close() }
+
+        let ov = try #require(waitForOutlineView(in: c.window))
+        let nameColumn = try #require(ov.tableColumn(withIdentifier: .init("name")))
+        nameColumn.width = 411
+        pump()
+
+        #expect(manager.preferences.columnWidths["name"] == 411)
+    }
+
+    @Test
+    func sortIndicatorRestoredFromPreferences() throws {
+        let dir = try makeTempDir(files: ["a.txt"])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let manager = makeManager()
+        manager.preferences.sortColumn = .date
+        manager.preferences.sortAscending = false
+        let c = manager.openNewWindow(cwd: dir)
+        defer { c.close() }
+
+        let ov = try #require(waitForOutlineView(in: c.window))
+        let descriptor = try #require(ov.sortDescriptors.first)
+        #expect(descriptor.key == "date")
+        #expect(descriptor.ascending == false)
+    }
+
+    @Test
     func columnWidthSurvivesFileDeletion() throws {
         let dir = try makeTempDir(files: ["a.txt", "b.txt", "c.txt"])
         defer { try? FileManager.default.removeItem(at: dir) }

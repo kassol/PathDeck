@@ -130,6 +130,12 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
             pinnedFolders: manager.pinnedFolders
         )
         window.contentViewController = NSHostingController(rootView: root)
+        // contentViewController 赋值会把 window resize 到 SwiftUI fitting size（720×480 的
+        // min 约束），吞掉 contentRect / 传入 frame；赋值后重新应用目标 frame。
+        window.setFrame(defaultFrame, display: false)
+        if frame == nil {
+            window.center()
+        }
     }
 
     @available(*, unavailable)
@@ -198,6 +204,14 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         manager?.controllerDidBecomeKey(self)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        manager?.persistSession()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        manager?.persistSession()
     }
 
     func windowWillClose(_ notification: Notification) {

@@ -46,6 +46,18 @@ struct WorkspacePreferencesTests {
     }
 
     @Test
+    func columnWidthsPersistAndRestore() {
+        let suite = makeDefaults()
+        let prefs = WorkspacePreferences(defaults: suite)
+        #expect(prefs.columnWidths.isEmpty)
+        prefs.columnWidths["name"] = 333
+        prefs.columnWidths["size"] = 72
+        let reloaded = WorkspacePreferences(defaults: suite)
+        #expect(reloaded.columnWidths["name"] == 333)
+        #expect(reloaded.columnWidths["size"] == 72)
+    }
+
+    @Test
     func restoresFromStoredValues() {
         let suite = makeDefaults()
         suite.set(SortColumn.date.rawValue, forKey: "sortColumn")

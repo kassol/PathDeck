@@ -11,6 +11,11 @@ struct FileTableView: NSViewRepresentable {
     var dirtyDirectories: Set<String>?
     var pendingRenameURL: URL?
     var revealSelection: [URL]?
+    /// 建列时应用的持久化列宽（column id → width），缺失的列用内置默认值。仅 makeNSView 读取。
+    var initialColumnWidths: [String: CGFloat]
+    /// 建列时应用的排序列（列头指示箭头与 WorkspaceModel 的实际排序一致）。仅 makeNSView 读取。
+    var initialSortColumn: String
+    var initialSortAscending: Bool
     var onOpen: (FileItem) -> Void
     var onSort: (String, Bool) -> Void
     var onSelectionChange: ([FileItem]) -> Void
@@ -24,6 +29,7 @@ struct FileTableView: NSViewRepresentable {
     var onExpandCollapse: () -> Void
     var onPasteFiles: ([URL], PasteOperation) -> Void
     var onDuplicate: () -> Void
+    var onColumnResize: (String, CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -62,7 +68,7 @@ struct FileTableView: NSViewRepresentable {
         for spec in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(spec.id))
             column.title = spec.title
-            column.width = spec.width
+            column.width = initialColumnWidths[spec.id] ?? spec.width
             column.minWidth = spec.minWidth
             column.sortDescriptorPrototype = NSSortDescriptor(key: spec.id, ascending: true)
             outlineView.addTableColumn(column)
@@ -73,10 +79,12 @@ struct FileTableView: NSViewRepresentable {
         // resize 到适配内容，覆盖用户手动调整的列宽（删除/重命名/FSWatcher 刷新都会触发）。
         outlineView.autoresizesOutlineColumn = false
 
-        outlineView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
+        outlineView.sortDescriptors = [NSSortDescriptor(key: initialSortColumn, ascending: initialSortAscending)]
         outlineView.setAccessibilityIdentifier("fileTable")
         outlineView.coordinator = context.coordinator
         context.coordinator.outlineView = outlineView
+        // 建列/初始排序期间 columnDidResize 会同步触发，此前一直抑制持久化回调。
+        context.coordinator.columnSetupFinished = true
 
         let scrollView = NSScrollView()
         scrollView.documentView = outlineView
@@ -102,6 +110,7 @@ struct FileTableView: NSViewRepresentable {
         coord.onExpandCollapse = onExpandCollapse
         coord.onPasteFiles = onPasteFiles
         coord.onDuplicate = onDuplicate
+        coord.onColumnResize = onColumnResize
 
         guard let ov = nsView.documentView as? NSOutlineView else { return }
 
@@ -258,6 +267,9 @@ struct FileTableView: NSViewRepresentable {
         var onExpandCollapse: () -> Void
         var onPasteFiles: (([URL], PasteOperation) -> Void)?
         var onDuplicate: (() -> Void)?
+        var onColumnResize: ((String, CGFloat) -> Void)?
+        /// makeNSView 建列完成前为 false，抑制初始宽度设置触发的持久化。
+        var columnSetupFinished = false
         weak var outlineView: NSOutlineView?
 
         var editingRow: Int = -1
@@ -393,6 +405,12 @@ struct FileTableView: NSViewRepresentable {
                 break
             }
             return cell
+        }
+
+        func outlineViewColumnDidResize(_ notification: Notification) {
+            guard columnSetupFinished,
+                  let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn else { return }
+            onColumnResize?(column.identifier.rawValue, column.width)
         }
 
         func outlineView(_ outlineView: NSOutlineView,

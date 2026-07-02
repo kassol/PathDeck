@@ -53,11 +53,19 @@ final class WorkspaceManager {
             sortAscending: preferences.sortAscending,
             showHidden: preferences.showHidden
         )
+        // 新独立窗口继承最近活跃窗口的 frame 并级联偏移；开 tab 时 frame 由 tab 组决定，不继承。
+        let inheritedFrame: NSRect? = {
+            guard existing == nil, var f = keyController?.window?.frame else { return nil }
+            f.origin.x += 24
+            f.origin.y -= 24
+            return Self.validatedOnScreen(f) ?? Self.validatedOnScreen(keyController?.window?.frame ?? .zero)
+        }()
         let controller = WorkspaceController(
             workspace: workspace,
             viewState: WorkspaceViewState(),
             manager: self,
-            engine: engine
+            engine: engine,
+            frame: inheritedFrame
         )
         controllers.append(controller)
         if let existing, let window = controller.window {
@@ -80,6 +88,12 @@ final class WorkspaceManager {
                 controllers.append(controller)
                 groupControllers.append(controller)
                 if let window = controller.window {
+                    if prevWindow == nil,
+                       let fs = group.frame,
+                       let rect = Self.validatedOnScreen(NSRectFromString(fs)) {
+                        // 只需设组内首个 window，后续 addTabbedWindow 自动沿用组 frame。
+                        window.setFrame(rect, display: false)
+                    }
                     if let prev = prevWindow {
                         prev.addTabbedWindow(window, ordered: .above)
                     }
@@ -150,6 +164,14 @@ final class WorkspaceManager {
             controller.window?.title = title
         }
         return controller
+    }
+
+    /// frame 有效且与任一可见屏幕相交时原样返回，否则 nil（调用方回退默认居中）。
+    /// 覆盖重启后显示器配置变化（拔外接屏）导致 frame 全部越界的场景。
+    static func validatedOnScreen(_ frame: NSRect) -> NSRect? {
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        let visible = NSScreen.screens.contains { $0.visibleFrame.intersects(frame) }
+        return visible ? frame : nil
     }
 
     func findController(matchingCwd url: URL) -> WorkspaceController? {
@@ -226,12 +248,14 @@ final class WorkspaceManager {
             // 先找 isKeyWindow；没有再找 lastActive。
             let keyIdx = ordered.firstIndex { $0.window?.isKeyWindow == true }
                 ?? ordered.firstIndex { isActive($0) }
-            groups.append(WorkspaceGroupState(windows: windows, keyWindowIndex: keyIdx))
+            let frame = (ordered.first?.window?.frame).map(NSStringFromRect)
+            groups.append(WorkspaceGroupState(windows: windows, keyWindowIndex: keyIdx, frame: frame))
             groupHasActive.append(ordered.contains(where: isActive))
         }
         for c in ungrouped {
             let windows = [windowStateFor(c)]
-            groups.append(WorkspaceGroupState(windows: windows, keyWindowIndex: 0))
+            let frame = (c.window?.frame).map(NSStringFromRect)
+            groups.append(WorkspaceGroupState(windows: windows, keyWindowIndex: 0, frame: frame))
             groupHasActive.append(isActive(c))
         }
         let keyGroupIndex = groupHasActive.firstIndex(of: true)

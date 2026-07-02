@@ -31,6 +31,27 @@ struct WorkspacePersistenceTests {
     }
 
     @Test
+    func groupFrameRoundTripsAndDefaultsToNil() {
+        let suite = makeDefaults()
+        let persistence = WorkspacePersistence(defaults: suite)
+        let state = WorkspaceSessionState(
+            groups: [
+                WorkspaceGroupState(windows: [makeWindowState(cwd: "/tmp")],
+                                    keyWindowIndex: 0,
+                                    frame: "{{100, 200}, {1280, 800}}"),
+                WorkspaceGroupState(windows: [makeWindowState(cwd: "/Users/a")],
+                                    keyWindowIndex: 0)
+            ],
+            keyGroupIndex: 0
+        )
+        persistence.persist(state)
+
+        let reloaded = WorkspacePersistence(defaults: suite).loadSessionState()
+        #expect(reloaded?.groups[0].frame == "{{100, 200}, {1280, 800}}")
+        #expect(reloaded?.groups[1].frame == nil)
+    }
+
+    @Test
     func roundTripWithMultipleGroups() {
         let suite = makeDefaults()
         let persistence = WorkspacePersistence(defaults: suite)

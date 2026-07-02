@@ -18,6 +18,8 @@ struct WorkspaceGroupState: Codable {
     let windows: [WorkspaceWindowState]
     /// group 内 key tab 的 index；nil = 取首项。
     let keyWindowIndex: Int?
+    /// group 可见窗口的 frame（NSStringFromRect）；nil = 默认尺寸居中（兼容旧快照）。
+    var frame: String? = nil
 }
 
 /// 一次会话的全部 workspace window 状态。

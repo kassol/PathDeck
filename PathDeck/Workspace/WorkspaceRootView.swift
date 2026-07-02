@@ -148,6 +148,9 @@ struct WorkspaceRootView: View {
                     dirtyDirectories: workspace.dirtyDirectories,
                     pendingRenameURL: workspace.pendingRenameURL,
                     revealSelection: workspace.revealSelection,
+                    initialColumnWidths: preferences.columnWidths,
+                    initialSortColumn: workspace.sortColumn.rawValue,
+                    initialSortAscending: workspace.sortAscending,
                     onOpen: { workspace.enter($0) },
                     onSort: { column, ascending in
                         controller.applySortViaManager(column: column, ascending: ascending)
@@ -164,7 +167,8 @@ struct WorkspaceRootView: View {
                     onSendPathToTerminal: { urls in sendPathToTerminal(urls) },
                     onExpandCollapse: { workspace.updateWatcherExpandedDirectories() },
                     onPasteFiles: { urls, op in workspace.pasteFiles(urls, operation: op) },
-                    onDuplicate: { workspace.duplicateItems() }
+                    onDuplicate: { workspace.duplicateItems() },
+                    onColumnResize: { id, width in preferences.columnWidths[id] = width }
                 )
 
                 if preferences.isPreviewPaneVisible {

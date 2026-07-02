@@ -58,5 +58,6 @@ Workspace/
 
 ## 变更日志
 
+- 2026-07-02 **重启持久化补全**：`WorkspacePreferences` 新增 `columnWidths: [String: CGFloat]`（列宽全局偏好）；`WorkspaceGroupState` 新增 `frame: String?`（NSStringFromRect，可选字段兼容旧快照）；`persistSessionImmediately` 记录各组可见窗口 frame，`restoreSession` 对组内首 window `setFrame`（后续 tab 自动沿用组 frame），`WorkspaceManager.validatedOnScreen` 越界防护（不与任一屏幕相交回退默认居中）；`openNewWindow` 新独立窗口继承 `keyController` frame + (24, -24) 级联（开 tab 不继承）；`WorkspaceController` 新增 `windowDidEndLiveResize`/`windowDidMove` → debounced persist。修复既有 bug：init 里 `contentViewController` 赋值会把窗口 resize 到 SwiftUI fitting size（720×480）吞掉 contentRect / 传入 frame，赋值后须重新 `setFrame`（+ frame==nil 时重新 center）。测试 `WindowFramePersistenceTests`。
 - 2026-06-25 **Fix ⌘T New Tab 文件焦点失效**：`newTabMonitor` 非终端分支从 `return event`（依赖 SwiftUI `.keyboardShortcut("t")`）改为直接 `manager.openNewWindow(cwd:tabbedTo: self.window)` + `return nil`。根因：S32 从单一 SwiftUI 视图树（`ContentView`）迁到手动 NSWindow + 无 WindowGroup 后，first responder 为纯 AppKit `FileNSOutlineView` 时 SwiftUI command 不派发，⌘T 静默失效；终端焦点走 monitor 兜底不受影响。Next/Prev/⌘1..9 在 S32 已改纯 monitor，唯 New Tab 沿用旧"放行给 SwiftUI"假设被遗漏。`.keyboardShortcut("t")` 保留作菜单 ⌘T 显示 + Settings 焦点兜底。
 - 2026-06-18 **S32 NSWindow Tabbing**：模块建立。删 TabManager/FileTab/FileTabBar 自绘 tab 栈，整体迁移到 NSWindow tabbing + per-window state。旧 `fileTabsState` 迁移到 `workspaceSessionState`。

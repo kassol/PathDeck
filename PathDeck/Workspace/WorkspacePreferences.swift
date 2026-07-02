@@ -25,6 +25,11 @@ final class WorkspacePreferences {
     var isPreviewPaneVisible: Bool {
         didSet { persistPreviewPaneVisible() }
     }
+    /// 文件列表列宽（column id → width）。不用 NSTableView autosaveName：它写死 standard
+    /// UserDefaults，测试无法隔离，也绕开本类的可注入 defaults 模式。
+    var columnWidths: [String: CGFloat] {
+        didSet { persistColumnWidths() }
+    }
 
     private let defaults: UserDefaults
 
@@ -34,6 +39,7 @@ final class WorkspacePreferences {
     private static let bottomPanelHeightKey = "bottomPanelHeight"
     private static let verticalTabWidthKey = "verticalTabWidth"
     private static let previewPaneVisibleKey = "previewPaneVisible"
+    private static let columnWidthsKey = "columnWidths"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -54,6 +60,8 @@ final class WorkspacePreferences {
             ? CGFloat(defaults.double(forKey: Self.verticalTabWidthKey)) : 140
         isPreviewPaneVisible = defaults.object(forKey: Self.previewPaneVisibleKey) != nil
             ? defaults.bool(forKey: Self.previewPaneVisibleKey) : true
+        columnWidths = (defaults.dictionary(forKey: Self.columnWidthsKey) as? [String: Double])?
+            .mapValues { CGFloat($0) } ?? [:]
     }
 
     private func persistSortColumn() { defaults.set(sortColumn.rawValue, forKey: Self.sortColumnKey) }
@@ -62,4 +70,5 @@ final class WorkspacePreferences {
     private func persistBottomPanelHeight() { defaults.set(Double(bottomPanelHeight), forKey: Self.bottomPanelHeightKey) }
     private func persistVerticalTabWidth() { defaults.set(Double(verticalTabWidth), forKey: Self.verticalTabWidthKey) }
     private func persistPreviewPaneVisible() { defaults.set(isPreviewPaneVisible, forKey: Self.previewPaneVisibleKey) }
+    private func persistColumnWidths() { defaults.set(columnWidths.mapValues { Double($0) }, forKey: Self.columnWidthsKey) }
 }
