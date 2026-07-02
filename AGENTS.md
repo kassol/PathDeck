@@ -170,6 +170,20 @@ xcodebuild -deleteComponent MetalToolchain
 - i18n：用户可见字符串用英文 key，SwiftUI 直接写字面量（`Text("Key")`、`.help("Key")`）自动走 `LocalizedStringKey`；AppKit 用 `String(localized: "Key")`。翻译在 `Localizable.xcstrings`（String Catalog，en + zh-Hans）。条件文案用 `LocalizedStringKey(condition ? "A" : "B")`（三元返回 `String` 不走自动本地化）。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
+## Agent skills
+
+### Issue tracker
+
+Issues tracked on GitHub (`kassol/PathDeck`) via the `gh` CLI; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles use their default names (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## 变更日志
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
