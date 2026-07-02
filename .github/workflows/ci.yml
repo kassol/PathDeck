@@ -42,4 +42,21 @@ jobs:
             -destination 'platform=macOS,arch=arm64' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             MACOSX_DEPLOYMENT_TARGET=26.4 \
+            -resultBundlePath TestResults.xcresult \
             test
+
+      - name: Dump crash reports
+        if: failure()
+        run: |
+          ls -la ~/Library/Logs/DiagnosticReports/ || true
+          for f in ~/Library/Logs/DiagnosticReports/PathDeck*; do
+            echo "===== $f ====="
+            head -100 "$f"
+          done || true
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults.xcresult
