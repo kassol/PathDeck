@@ -32,9 +32,14 @@ jobs:
             build
 
       - name: Unit tests
+        # The macos-26 image currently runs macOS 26.4 while the product's
+        # deployment target is 26.5 — tests can't launch on a lower host OS.
+        # Override the target for the test run only; drop this once the image
+        # reaches 26.5.
         run: |
           xcodebuild -project PathDeck.xcodeproj -scheme PathDeck \
             -only-testing:PathDeckTests \
             -destination 'platform=macOS,arch=arm64' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            MACOSX_DEPLOYMENT_TARGET=26.4 \
             test
