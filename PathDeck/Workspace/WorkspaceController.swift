@@ -208,5 +208,8 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
             }
         }
         manager?.controllerWillClose(self)
+        // 同步卸载 SwiftUI 视图树：关闭后 runloop 里残留的渲染更新不得再触碰
+        // engineHandle（engine 生命周期短于 controller 的场景，如单测，会命中 fatalError）。
+        window?.contentViewController = nil
     }
 }
