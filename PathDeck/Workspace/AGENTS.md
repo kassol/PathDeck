@@ -29,7 +29,7 @@ Workspace/
 
 ## 模块规范
 
-- **TerminalEngine 单实例**：由 `WorkspaceManager` strong 持有；`WorkspaceController` 仅 weak（`engineHandle` 计算属性兜底）。session ID 全局唯一；engine 的 `onSessionClose` / `onCwdChange` / `onTitleChange` 经 manager 反查 owner controller 派发，禁止 controller 直接订阅 engine。
+- **TerminalEngine 单实例**：由 `WorkspaceManager` strong 持有；`WorkspaceController` 仅 weak（`engineHandle` 计算属性兜底）。session ID 全局唯一；engine 的 `onSessionClose` / `onCwdChange` / `onTitleChange` 经 manager 反查 owner controller 派发，禁止 controller 直接订阅 engine。`windowWillClose` 必须同步卸载 `contentViewController`：关闭后 runloop 残留的 SwiftUI 渲染不得再触碰 `engineHandle`（engine 生命周期短于 controller 的场景——如单测局部 manager——会命中 fatalError，CI 慢时序实测踩过）。
 - **持久化 debounce + 关键节点 flush**：`WorkspaceManager.persistSession()` 走 100ms debounce 合并日常变化（rename/reorder/cwd/mode 切换等经 `WorkspaceController` 包装方法触发）；关 window（`controllerWillClose`）和 app 退出（`AppDelegate.applicationWillTerminate`）都改调 `persistSessionImmediately()` 立即写盘，避免快速关闭/退出时丢最近变化导致重启复原已关 window。视图层 `WorkspacePersistenceModifier` 监听 controller 的 `store.sessions.count` / `viewState.isTerminalVisible/mode/activeTerminalID` / `workspace.currentURL` 变化触发 debounce 路径。
 - **lastActiveControllerID 兜底**：manager 维护 `lastActiveControllerID: ObjectIdentifier?`，在 `controllerDidBecomeKey` 更新、在 `controllerWillClose` 清空。`keyController` computed 与持久化 `keyGroupIndex` 的判定优先看 `window.isKeyWindow`；Settings / NSAlert / 其他非 workspace 面板抢走 key window 时所有 workspace.isKeyWindow 都为 false，此时退到 lastActive 标识"用户视角的当前 workspace"，避免无脑 fallback 到 `controllers.first` 污染恢复目标与外部路由的 `tabbedTo` 入参（典型场景：激活第 2 个 workspace → 开 Settings → Quit，重启应仍回到第 2 个 workspace 所在 group）。
 - **NSWindow tabbing 关键 API**：
