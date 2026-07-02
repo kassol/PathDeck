@@ -21,6 +21,9 @@ jobs:
           sw_vers
           xcodebuild -version
 
+      - name: Fetch vendored GhosttyKit
+        run: ./scripts/fetch-ghostty.sh
+
       - name: Build
         run: |
           xcodebuild -project PathDeck.xcodeproj -scheme PathDeck \

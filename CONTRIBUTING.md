@@ -15,6 +15,9 @@ Open an issue using the provided templates. For bugs, include your macOS version
 - macOS 26.5+, Apple Silicon, Xcode 26.5+
 
 ```bash
+# One-time: fetch the prebuilt libghostty binary (not in git)
+./scripts/fetch-ghostty.sh
+
 # Build
 xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -configuration Debug build
 

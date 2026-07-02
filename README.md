@@ -38,7 +38,8 @@ Most file managers make you leave for a terminal; most terminals make you leave 
 ```bash
 git clone https://github.com/kassol/PathDeck.git
 cd PathDeck
-open PathDeck.xcodeproj   # then ⌘R in Xcode
+./scripts/fetch-ghostty.sh   # downloads the prebuilt libghostty binary into vendor/
+open PathDeck.xcodeproj      # then ⌘R in Xcode
 ```
 
 Or from the command line:
