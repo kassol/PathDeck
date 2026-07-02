@@ -69,6 +69,9 @@ struct FileTableView: NSViewRepresentable {
         }
         outlineView.outlineTableColumn = outlineView.tableColumns.first
         outlineView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        // 默认 true 时 reloadItem(nil, reloadChildren:) 会把 outline column（name 列）
+        // resize 到适配内容，覆盖用户手动调整的列宽（删除/重命名/FSWatcher 刷新都会触发）。
+        outlineView.autoresizesOutlineColumn = false
 
         outlineView.sortDescriptors = [NSSortDescriptor(key: Coordinator.nameColumn, ascending: true)]
         outlineView.setAccessibilityIdentifier("fileTable")
