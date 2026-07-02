@@ -22,6 +22,8 @@ struct FileTableView: NSViewRepresentable {
     var onClearDirtyDirectories: () -> Void
     var onSendPathToTerminal: ([URL]) -> Void
     var onExpandCollapse: () -> Void
+    var onPasteFiles: ([URL], PasteOperation) -> Void
+    var onDuplicate: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -95,6 +97,8 @@ struct FileTableView: NSViewRepresentable {
         coord.onNewFolder = onNewFolder
         coord.onSendPathToTerminal = onSendPathToTerminal
         coord.onExpandCollapse = onExpandCollapse
+        coord.onPasteFiles = onPasteFiles
+        coord.onDuplicate = onDuplicate
 
         guard let ov = nsView.documentView as? NSOutlineView else { return }
 
@@ -170,6 +174,49 @@ struct FileTableView: NSViewRepresentable {
             }
         }
 
+        // MARK: - Standard Edit selectors
+
+        @objc func copy(_ sender: Any?) {
+            guard let urls = coordinator?.selectedURLs(), !urls.isEmpty else { return }
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.writeObjects(urls.map { $0 as NSURL })
+            pb.setString(urls.map { $0.path(percentEncoded: false) }.joined(separator: "\n"), forType: .string)
+        }
+
+        @objc func paste(_ sender: Any?) {
+            guard let urls = readFileURLsFromPasteboard(), !urls.isEmpty else { return }
+            coordinator?.onPasteFiles?(urls, .copy)
+        }
+
+        @objc func moveItemHere(_ sender: Any?) {
+            guard let urls = readFileURLsFromPasteboard(), !urls.isEmpty else { return }
+            coordinator?.onPasteFiles?(urls, .move)
+        }
+
+        @objc func duplicate(_ sender: Any?) {
+            coordinator?.onDuplicate?()
+        }
+
+        override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+            switch item.action {
+            case #selector(copy(_:)), #selector(duplicate(_:)):
+                return selectedRowIndexes.count > 0
+            case #selector(paste(_:)), #selector(moveItemHere(_:)):
+                return readFileURLsFromPasteboard() != nil
+            default:
+                return super.validateUserInterfaceItem(item)
+            }
+        }
+
+        func readFileURLsFromPasteboard() -> [URL]? {
+            let urls = NSPasteboard.general.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) as? [URL]
+            return urls?.isEmpty == false ? urls : nil
+        }
+
         override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool {
             true
         }
@@ -206,6 +253,8 @@ struct FileTableView: NSViewRepresentable {
         var onNewFolder: () -> Void
         var onSendPathToTerminal: ([URL]) -> Void
         var onExpandCollapse: () -> Void
+        var onPasteFiles: (([URL], PasteOperation) -> Void)?
+        var onDuplicate: (() -> Void)?
         weak var outlineView: NSOutlineView?
 
         var editingRow: Int = -1
@@ -400,6 +449,11 @@ struct FileTableView: NSViewRepresentable {
 
             if clickedRow < 0 {
                 ov.deselectAll(nil)
+                let canPaste = (ov as? FileNSOutlineView)?.readFileURLsFromPasteboard() != nil
+                let pasteItem = addMenuItem(to: menu, title: String(localized: "Paste"),
+                                            action: #selector(menuPaste(_:)))
+                pasteItem.isEnabled = canPaste
+                menu.addItem(.separator())
                 addMenuItem(to: menu, title: String(localized: "New Folder"), action: #selector(menuNewFolder(_:)))
                 return
             }
@@ -430,6 +484,7 @@ struct FileTableView: NSViewRepresentable {
             menu.addItem(.separator())
 
             addMenuItem(to: menu, title: String(localized: "Copy Path"), action: #selector(menuCopyPath(_:)))
+            addMenuItem(to: menu, title: String(localized: "Duplicate"), action: #selector(menuDuplicate(_:)))
             addMenuItem(to: menu, title: String(localized: "Send Path to Terminal"),
                         action: #selector(menuSendPathToTerminal(_:)))
 
@@ -499,13 +554,20 @@ struct FileTableView: NSViewRepresentable {
 
         @objc private func menuNewFolder(_ sender: Any?) { onNewFolder() }
 
+        @objc private func menuDuplicate(_ sender: Any?) { onDuplicate?() }
+
+        @objc private func menuPaste(_ sender: Any?) {
+            guard let urls = (outlineView as? FileNSOutlineView)?.readFileURLsFromPasteboard() else { return }
+            onPasteFiles?(urls, .copy)
+        }
+
         @objc private func menuSendPathToTerminal(_ sender: Any?) {
             let urls = selectedURLs()
             guard !urls.isEmpty else { return }
             onSendPathToTerminal(urls)
         }
 
-        private func selectedURLs() -> [URL] {
+        func selectedURLs() -> [URL] {
             guard let ov = outlineView else { return [] }
             return ov.selectedRowIndexes.compactMap { row in
                 itemForRow(row)?.url

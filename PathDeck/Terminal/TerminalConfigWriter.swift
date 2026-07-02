@@ -1,11 +1,11 @@
 import Foundation
 
 /// 把终端外观/行为偏好序列化成 ghostty 配置文件文本，写到受管 runtime.conf。
+/// 内置 Monokai Pro Light 固定配色，字体/光标/窗口属性从 `TerminalPreferences` 读取。
 ///
 /// 这是 PathDeck → libghostty 的唯一外观透传通道：vendored `GhosttyKit.xcframework`
 /// 不导出逐键 `ghostty_config_set`，只能 `ghostty_config_new` →
 /// `ghostty_config_load_file(runtime.conf)` → `ghostty_config_finalize`。
-/// 详见 `docs/plans/2026-06-25-s33-terminal-appearance-hot-reload.md`。
 /// `nonisolated`：纯序列化 + 文件 IO，被 nonisolated 的 `GhosttyApp` 调用，与其同源。
 nonisolated enum TerminalConfigWriter {
     /// 受管配置文件路径：`NSTemporaryDirectory()/PathDeck/runtime.conf`。
@@ -26,15 +26,52 @@ nonisolated enum TerminalConfigWriter {
         return url
     }
 
+    // Monokai Pro Light — from iTerm2-Color-Schemes (mbadolato/iTerm2-Color-Schemes)
+    private static let themeLines: [String] = [
+        "background = #faf4f2",
+        "foreground = #29242a",
+        "cursor-color = #706b6e",
+        "selection-background = #bfb9ba",
+        "selection-foreground = #29242a",
+        "palette = 0=#faf4f2",
+        "palette = 1=#e14775",
+        "palette = 2=#269d69",
+        "palette = 3=#cc7a0a",
+        "palette = 4=#e16032",
+        "palette = 5=#7058be",
+        "palette = 6=#1c8ca8",
+        "palette = 7=#29242a",
+        "palette = 8=#a59fa0",
+        "palette = 9=#e14775",
+        "palette = 10=#269d69",
+        "palette = 11=#cc7a0a",
+        "palette = 12=#e16032",
+        "palette = 13=#7058be",
+        "palette = 14=#1c8ca8",
+        "palette = 15=#29242a",
+    ]
+
     /// 纯函数：偏好 → ghostty 配置文本（每行 `key = value`）。脱离文件系统可单测。
     static func serialize(_ prefs: TerminalPreferences) -> String {
         var lines: [String] = []
-        lines.append(contentsOf: BuiltInThemes.preset(id: prefs.activeThemeID).configLines())
+        lines.append(contentsOf: themeLines)
         if !prefs.fontFamily.isEmpty {
-            // ghostty config 值取整行（含空格），不加引号——否则引号会被当成字体名一部分。
             lines.append("font-family = \(prefs.fontFamily)")
         }
+        if !prefs.fontStyle.isEmpty {
+            lines.append("font-style = \(prefs.fontStyle)")
+        }
         lines.append("font-size = \(formatNumber(prefs.fontSize))")
+        if !prefs.useLigatures {
+            lines.append("font-feature = -calt")
+            lines.append("font-feature = -liga")
+        }
+        if prefs.fontThicken {
+            lines.append("font-thicken = true")
+        }
+        if prefs.useNonASCIIFont && !prefs.nonASCIIFontFamily.isEmpty {
+            lines.append("font-codepoint-map = U+0080-U+FFFF=\(prefs.nonASCIIFontFamily)")
+        }
         lines.append("cursor-style = \(prefs.cursorStyle)")
         lines.append("window-padding-x = \(prefs.padding)")
         lines.append("window-padding-y = \(prefs.padding)")

@@ -318,7 +318,7 @@ final class GhosttySurfaceView: NSView {
 
     private static let appReservedShortcuts: Set<ReservedShortcut> = {
         var s = Set<ReservedShortcut>()
-        for c: Character in ["t", "w", "o", "f", "q", ","] {
+        for c: Character in ["t", "w", "o", "f", "q", ",", "d"] {
             s.insert(.init(char: c, shift: false, option: false))
         }
         for n in 1...9 {

@@ -27,13 +27,29 @@ nonisolated final class TerminalPreferences {
     var scrollback: Int {
         didSet { defaults.set(scrollback, forKey: Self.scrollbackKey); postAppearanceChange() }
     }
-    /// 当前内置主题 id（见 `BuiltInThemes`）。热重载。
-    var activeThemeID: String {
-        didSet { defaults.set(activeThemeID, forKey: Self.themeIDKey); postAppearanceChange() }
-    }
     /// 终端字体族（空 = 系统默认等宽）。ghostty 注解：仅新建终端生效（font-size 才能热重载）。
     var fontFamily: String {
         didSet { defaults.set(fontFamily, forKey: Self.fontFamilyKey); postAppearanceChange() }
+    }
+    /// 字体样式（"Regular"/"Bold"/"Light" 等，空 = 字体默认面）。仅新建终端生效。
+    var fontStyle: String {
+        didSet { defaults.set(fontStyle, forKey: Self.fontStyleKey); postAppearanceChange() }
+    }
+    /// 连字（calt/liga）。false 时输出 `font-feature = -calt` + `-liga`。仅新建终端生效。
+    var useLigatures: Bool {
+        didSet { defaults.set(useLigatures, forKey: Self.useLigaturesKey); postAppearanceChange() }
+    }
+    /// 字体加粗渲染（ghostty `font-thicken`，UI 标注 Anti-aliased）。仅新建终端生效。
+    var fontThicken: Bool {
+        didSet { defaults.set(fontThicken, forKey: Self.fontThickenKey); postAppearanceChange() }
+    }
+    /// 是否为非 ASCII 文本使用独立字体（ghostty `font-codepoint-map`）。仅新建终端生效。
+    var useNonASCIIFont: Bool {
+        didSet { defaults.set(useNonASCIIFont, forKey: Self.useNonASCIIFontKey); postAppearanceChange() }
+    }
+    /// 非 ASCII 字体族（空 = 系统默认）。仅新建终端生效。
+    var nonASCIIFontFamily: String {
+        didSet { defaults.set(nonASCIIFontFamily, forKey: Self.nonASCIIFontFamilyKey); postAppearanceChange() }
     }
     /// 光标样式（`bar` / `block` / `underline`）。热重载。
     var cursorStyle: String {
@@ -62,8 +78,12 @@ nonisolated final class TerminalPreferences {
     private static let customShellKey = "terminalCustomShellPath"
     private static let fontSizeKey = "terminalFontSize"
     private static let scrollbackKey = "terminalScrollback"
-    private static let themeIDKey = "terminalThemeID"
     private static let fontFamilyKey = "terminalFontFamily"
+    private static let fontStyleKey = "terminalFontStyle"
+    private static let useLigaturesKey = "terminalUseLigatures"
+    private static let fontThickenKey = "terminalFontThicken"
+    private static let useNonASCIIFontKey = "terminalUseNonASCIIFont"
+    private static let nonASCIIFontFamilyKey = "terminalNonASCIIFontFamily"
     private static let cursorStyleKey = "terminalCursorStyle"
     private static let paddingKey = "terminalPadding"
     private static let opacityKey = "terminalOpacity"
@@ -84,8 +104,14 @@ nonisolated final class TerminalPreferences {
         fontSize = storedFont > 0 ? storedFont : Self.defaultFontSize
         let storedScroll = defaults.integer(forKey: Self.scrollbackKey)
         scrollback = storedScroll > 0 ? storedScroll : Self.defaultScrollback
-        activeThemeID = defaults.string(forKey: Self.themeIDKey) ?? BuiltInThemes.defaultID
         fontFamily = defaults.string(forKey: Self.fontFamilyKey) ?? ""
+        fontStyle = defaults.string(forKey: Self.fontStyleKey) ?? ""
+        useLigatures = defaults.object(forKey: Self.useLigaturesKey) != nil
+            ? defaults.bool(forKey: Self.useLigaturesKey) : true
+        fontThicken = defaults.object(forKey: Self.fontThickenKey) != nil
+            ? defaults.bool(forKey: Self.fontThickenKey) : true
+        useNonASCIIFont = defaults.bool(forKey: Self.useNonASCIIFontKey)
+        nonASCIIFontFamily = defaults.string(forKey: Self.nonASCIIFontFamilyKey) ?? ""
         cursorStyle = defaults.string(forKey: Self.cursorStyleKey) ?? Self.defaultCursorStyle
         padding = defaults.object(forKey: Self.paddingKey) != nil
             ? defaults.integer(forKey: Self.paddingKey) : Self.defaultPadding

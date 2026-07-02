@@ -162,7 +162,9 @@ struct WorkspaceRootView: View {
                     onClearRevealSelection: { workspace.revealSelection = nil },
                     onClearDirtyDirectories: { workspace.dirtyDirectories = nil },
                     onSendPathToTerminal: { urls in sendPathToTerminal(urls) },
-                    onExpandCollapse: { workspace.updateWatcherExpandedDirectories() }
+                    onExpandCollapse: { workspace.updateWatcherExpandedDirectories() },
+                    onPasteFiles: { urls, op in workspace.pasteFiles(urls, operation: op) },
+                    onDuplicate: { workspace.duplicateItems() }
                 )
 
                 if preferences.isPreviewPaneVisible {

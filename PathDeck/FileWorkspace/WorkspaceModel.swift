@@ -6,6 +6,10 @@ enum SortColumn: String {
     case name, date, size, kind
 }
 
+enum PasteOperation {
+    case copy, move
+}
+
 @Observable
 final class WorkspaceModel {
     private(set) var currentURL: URL
@@ -142,6 +146,59 @@ final class WorkspaceModel {
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
         }
         reload()
+    }
+
+    func pasteFiles(_ sourceURLs: [URL], operation: PasteOperation) {
+        let fm = FileManager.default
+        var newURLs: [URL] = []
+        for source in sourceURLs {
+            let dest = uniqueDestination(for: source.lastPathComponent, in: currentURL)
+            do {
+                switch operation {
+                case .copy: try fm.copyItem(at: source, to: dest)
+                case .move: try fm.moveItem(at: source, to: dest)
+                }
+                newURLs.append(dest)
+            } catch {
+                NSSound.beep()
+            }
+        }
+        reload()
+        if !newURLs.isEmpty {
+            selectedURLs = newURLs
+            revealSelection = newURLs
+        }
+    }
+
+    func duplicateItems() {
+        pasteFiles(selectedURLs, operation: .copy)
+    }
+
+    private func uniqueDestination(for name: String, in directory: URL) -> URL {
+        let base = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension
+        let suffix = ext.isEmpty ? "" : ".\(ext)"
+        let fm = FileManager.default
+
+        let candidate = directory.appendingPathComponent(name)
+        if !fm.fileExists(atPath: candidate.path(percentEncoded: false)) {
+            return candidate
+        }
+
+        let copyBase = "\(base) copy"
+        let first = directory.appendingPathComponent("\(copyBase)\(suffix)")
+        if !fm.fileExists(atPath: first.path(percentEncoded: false)) {
+            return first
+        }
+
+        var n = 2
+        while true {
+            let url = directory.appendingPathComponent("\(copyBase) \(n)\(suffix)")
+            if !fm.fileExists(atPath: url.path(percentEncoded: false)) {
+                return url
+            }
+            n += 1
+        }
     }
 
     func renameItem(from oldURL: URL, to newName: String) -> Bool {

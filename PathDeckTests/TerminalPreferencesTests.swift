@@ -45,15 +45,14 @@ struct TerminalPreferencesTests {
     }
 
     @Test
-    func defaultThemeIsMocha() {
-        let prefs = TerminalPreferences(defaults: makeDefaults())
-        #expect(prefs.activeThemeID == BuiltInThemes.defaultID)
-    }
-
-    @Test
     func appearanceDefaults() {
         let prefs = TerminalPreferences(defaults: makeDefaults())
         #expect(prefs.fontFamily == "")
+        #expect(prefs.fontStyle == "")
+        #expect(prefs.useLigatures == true)
+        #expect(prefs.fontThicken == true)
+        #expect(prefs.useNonASCIIFont == false)
+        #expect(prefs.nonASCIIFontFamily == "")
         #expect(prefs.cursorStyle == "bar")
         #expect(prefs.padding == 8)
         #expect(prefs.opacity == 1.0)
@@ -69,8 +68,12 @@ struct TerminalPreferencesTests {
         a.scrollback = 25000
         a.shell = "custom"
         a.customShellPath = "/bin/bash"
-        a.activeThemeID = "nord"
         a.fontFamily = "Menlo"
+        a.fontStyle = "Bold"
+        a.useLigatures = false
+        a.fontThicken = false
+        a.useNonASCIIFont = true
+        a.nonASCIIFontFamily = "PingFang SC"
         a.cursorStyle = "block"
         a.padding = 12
         a.opacity = 0.85
@@ -81,8 +84,12 @@ struct TerminalPreferencesTests {
         #expect(b.scrollback == 25000)
         #expect(b.shell == "custom")
         #expect(b.customShellPath == "/bin/bash")
-        #expect(b.activeThemeID == "nord")
         #expect(b.fontFamily == "Menlo")
+        #expect(b.fontStyle == "Bold")
+        #expect(b.useLigatures == false)
+        #expect(b.fontThicken == false)
+        #expect(b.useNonASCIIFont == true)
+        #expect(b.nonASCIIFontFamily == "PingFang SC")
         #expect(b.cursorStyle == "block")
         #expect(b.padding == 12)
         #expect(b.opacity == 0.85)

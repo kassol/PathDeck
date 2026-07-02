@@ -4,7 +4,7 @@
 
 ## 职责
 
-Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder）、Quick Look 预览、打开任意文件夹、文件名搜索、Send Path to Terminal、拖拽文件到终端、FSEvents 实时目录刷新（FSWatcher）、Preview Pane（右侧文件预览面板）。后续扩展：多视图模式、内容搜索。
+Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文件、右键菜单文件操作（Open/Trash/Rename/New Folder/Copy/Paste/Move/Duplicate）、Quick Look 预览、打开任意文件夹、文件名搜索、Send Path to Terminal、拖拽文件到终端、FSEvents 实时目录刷新（FSWatcher）、Preview Pane（右侧文件预览面板）。后续扩展：多视图模式、内容搜索。
 
 ## 目录结构
 
@@ -12,7 +12,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 |---|---|
 | `FileItem.swift` | 文件/目录的值类型 model（`Sendable`） |
 | `DirectoryLister.swift` | 无状态目录枚举服务（`nonisolated`，可单测、未来可挪后台） |
-| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）。持有 FSWatcher 做目录实时刷新。多实例设计：S32 起每个 `WorkspaceController`（即每个 NSWindow workspace）独立持有一个实例，`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，不读 UserDefaults；sort/showHidden 由全局 `WorkspacePreferences` 单实例统一管理，所有 window 共享 |
+| `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder/pasteFiles/duplicateItems）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）。持有 FSWatcher 做目录实时刷新。多实例设计：S32 起每个 `WorkspaceController`（即每个 NSWindow workspace）独立持有一个实例，`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，不读 UserDefaults；sort/showHidden 由全局 `WorkspacePreferences` 单实例统一管理，所有 window 共享 |
 | `FSWatcher.swift` | FSEvents 文件变化监听器：递归监听根目录 → 0.5s coalesce 去抖 → 传 dirty 目录集合回调；支持 `setExpandedDirectories` 匹配已展开子目录事件 |
 | `OutlineDataSource.swift` | `NSOutlineView` 树状数据层（`FileNode` 引用包装 + rootNodes/childrenCache + nodePool identity 复用 + per-level 排序 + 递归 clear）|
 | `FileTableView.swift` | `NSViewRepresentable` 包 `NSOutlineView`（`FileNSOutlineView` 子类），目录就地展开/折叠 + 搜索 flat 降级 + 右键菜单 + inline rename + Quick Look + 拖拽源 |
@@ -35,6 +35,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-06-30 S35 File Edit Actions：`FileNSOutlineView` 实现标准 Cocoa action selector（`copy:`/`paste:`/`moveItemHere:`/`duplicate:`）+ `validateUserInterfaceItem`，Edit 菜单 pasteboard section 手动重建（Copy/Paste/Move Item Here ⌘⌥V/Duplicate ⌘D/Select All/Copy Current Path）。`WorkspaceModel` 新增 `pasteFiles(_:operation:)`（copy/move + Finder 式 " copy" 重名递增）+ `duplicateItems()`。右键菜单追加 Duplicate（文件选中时）和 Paste（空白区）。`appReservedShortcuts` 新增 `"d"` 避免终端拦截 ⌘D。NSPasteboard 双类型写入（`.fileURL` + `.string`）。
 - 2026-06-18 S32 NSWindow Tabbing：宿主层 file tab 升级为系统 NSWindow tabbing；本模块 `WorkspaceModel` 的所有权从 `TabManager.workspaceModels` 字典迁到 per-window `Workspace/WorkspaceController.workspace`，每个 NSWindow 持有一份独立实例（含独立 FSWatcher）。`sort/showHidden` 改由全局 `Workspace/WorkspacePreferences` 单实例统一管理，所有 window 共享 + `WorkspaceManager.applySort/toggleHidden` 同步给所有 controller 的 workspace。`FileTableView` 装载点从 `ContentView` 迁到 `Workspace/WorkspaceRootView`。
 - 2026-06-18 S29 Convergence：`OutlineDataSource` 新增 `refreshAll`（根+所有展开子目录全量刷新）+ `child(index:of:)` 越界返回 inert placeholder 防崩溃。`WorkspaceModel.reload()` 改用 `refreshAll`（本地操作保留展开态），`navigate()` 独立路径走 `loadRoot`。搜索模式 flat subscript 加 bounds guard。`FSWatcher.stop()` 修复 `deinit` 在自身 queue 上触发 `queue.sync` 死锁（`DispatchSpecificKey` 检测已在目标 queue）。测试修复 `reloadChildrenPrunesDeletedNestedCache` URL 尾部斜杠不匹配。
 - 2026-06-17 S26 目录就地折叠/展开：NSTableView→NSOutlineView 迁移。新增 `OutlineDataSource.swift`（`FileNode` + 树状数据层 + `refreshRoot` 保留展开状态 + `reloadChildren` 裁剪嵌套删除缓存）。`FileTableView` 全面重写 Coordinator（NSOutlineViewDataSource/Delegate），搜索模式 `FlatFileNode` flat 降级 + dirty reload 全量刷新。`FSWatcher` handler 改为 `(Set<String>) -> Void` + `setExpandedDirectories`，模型层所有展开变更同步 watcher scope。拖拽源 local + non-local mask。`WorkspaceModel` 持有 `OutlineDataSource` + `dirtyDirectories` 精确刷新。

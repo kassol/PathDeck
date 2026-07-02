@@ -44,12 +44,14 @@ struct TerminalConfigWriterTests {
     }
 
     @Test
-    func serializeIncludesActiveThemeColors() {
-        let prefs = makePrefs()
-        prefs.activeThemeID = "dracula"
-        let text = TerminalConfigWriter.serialize(prefs)
-        #expect(text.contains("background = #282a36"))
-        #expect(text.contains("palette = 0=#21222c"))
+    func serializeEmitsMonokaiProLightTheme() {
+        let text = TerminalConfigWriter.serialize(makePrefs())
+        #expect(text.contains("background = #faf4f2"))
+        #expect(text.contains("foreground = #29242a"))
+        #expect(text.contains("cursor-color = #706b6e"))
+        #expect(text.contains("palette = 0=#faf4f2"))
+        #expect(text.contains("palette = 1=#e14775"))
+        #expect(text.contains("palette = 15=#29242a"))
     }
 
     @Test
@@ -62,11 +64,55 @@ struct TerminalConfigWriterTests {
     }
 
     @Test
-    func fontFamilyOmittedWhenEmptyQuotedWhenSet() {
+    func fontFamilyOmittedWhenEmptyEmittedWhenSet() {
         #expect(!TerminalConfigWriter.serialize(makePrefs()).contains("font-family"))
         let prefs = makePrefs()
         prefs.fontFamily = "Menlo"
         #expect(TerminalConfigWriter.serialize(prefs).contains("font-family = Menlo"))
+    }
+
+    @Test
+    func fontStyleOmittedWhenEmptyEmittedWhenSet() {
+        #expect(!TerminalConfigWriter.serialize(makePrefs()).contains("font-style"))
+        let prefs = makePrefs()
+        prefs.fontStyle = "Bold"
+        #expect(TerminalConfigWriter.serialize(prefs).contains("font-style = Bold"))
+    }
+
+    @Test
+    func ligaturesDisabledEmitsFontFeatures() {
+        let prefs = makePrefs()
+        let onText = TerminalConfigWriter.serialize(prefs)
+        #expect(!onText.contains("font-feature"))
+
+        prefs.useLigatures = false
+        let offText = TerminalConfigWriter.serialize(prefs)
+        #expect(offText.contains("font-feature = -calt"))
+        #expect(offText.contains("font-feature = -liga"))
+    }
+
+    @Test
+    func fontThickenEmittedWhenEnabled() {
+        let prefs = makePrefs()
+        let text = TerminalConfigWriter.serialize(prefs)
+        #expect(text.contains("font-thicken = true"))
+
+        prefs.fontThicken = false
+        let offText = TerminalConfigWriter.serialize(prefs)
+        #expect(!offText.contains("font-thicken"))
+    }
+
+    @Test
+    func nonASCIIFontEmitsCodepointMap() {
+        let prefs = makePrefs()
+        #expect(!TerminalConfigWriter.serialize(prefs).contains("font-codepoint-map"))
+
+        prefs.useNonASCIIFont = true
+        #expect(!TerminalConfigWriter.serialize(prefs).contains("font-codepoint-map"))
+
+        prefs.nonASCIIFontFamily = "PingFang SC"
+        let text = TerminalConfigWriter.serialize(prefs)
+        #expect(text.contains("font-codepoint-map = U+0080-U+FFFF=PingFang SC"))
     }
 
     @Test

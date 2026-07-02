@@ -242,7 +242,38 @@ private struct ViewCommands: Commands {
             }
             .keyboardShortcut("f")
         }
-        CommandGroup(after: .pasteboard) {
+        CommandGroup(replacing: .pasteboard) {
+            Button("Copy") {
+                NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("c")
+
+            Button("Paste") {
+                NSApp.sendAction(Selector(("paste:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("v")
+
+            Button("Move Item Here") {
+                NSApp.sendAction(Selector(("moveItemHere:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("v", modifiers: [.command, .option])
+
+            Divider()
+
+            Button("Duplicate") {
+                NSApp.sendAction(Selector(("duplicate:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("d")
+
+            Divider()
+
+            Button("Select All") {
+                NSApp.sendAction(Selector(("selectAll:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("a")
+
+            Divider()
+
             Button("Copy Current Path") {
                 keyWorkspaceController()?.workspace.copyCurrentPath()
             }

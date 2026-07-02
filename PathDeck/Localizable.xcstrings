@@ -47,6 +47,9 @@
         }
       }
     },
+    "Anti-aliased" : {
+
+    },
     "Appearance" : {
       "localizations" : {
         "zh-Hans" : {
@@ -188,6 +191,26 @@
         }
       }
     },
+    "Copy" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝"
+          }
+        }
+      }
+    },
+    "Copy Current Path" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝当前路径"
+          }
+        }
+      }
+    },
     "Copy Path" : {
       "localizations" : {
         "zh-Hans" : {
@@ -204,6 +227,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建时间"
+          }
+        }
+      }
+    },
+    "Duplicate" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制"
+          }
+        }
+      }
+    },
+    "Move Item Here" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将项目移到这里"
           }
         }
       }
@@ -319,7 +362,11 @@
         }
       }
     },
+    "Font and window settings take effect in new terminals." : {
+
+    },
     "Font family takes effect in new terminals." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -330,6 +377,7 @@
       }
     },
     "Font Size" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -512,6 +560,9 @@
         }
       }
     },
+    "Non-ASCII Font" : {
+
+    },
     "Opacity" : {
       "localizations" : {
         "zh-Hans" : {
@@ -598,6 +649,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "边距"
+          }
+        }
+      }
+    },
+    "Paste" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粘贴"
           }
         }
       }
@@ -703,6 +764,19 @@
         }
       }
     },
+    "Select All" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全选"
+          }
+        }
+      }
+    },
+    "Select…" : {
+
+    },
     "Send Path to Terminal" : {
       "localizations" : {
         "zh-Hans" : {
@@ -777,6 +851,7 @@
       }
     },
     "Size & Opacity" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -787,6 +862,7 @@
       }
     },
     "System Default" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -848,6 +924,7 @@
       }
     },
     "Text & Font" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -868,6 +945,7 @@
       }
     },
     "Theme" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -917,6 +995,12 @@
         }
       }
     },
+    "Use a different font for non-ASCII text" : {
+
+    },
+    "Use Ligatures" : {
+
+    },
     "View" : {
       "localizations" : {
         "zh-Hans" : {
@@ -936,6 +1020,9 @@
           }
         }
       }
+    },
+    "Window" : {
+
     }
   },
   "version" : "1.0"
