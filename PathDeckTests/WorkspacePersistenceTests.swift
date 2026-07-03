@@ -78,6 +78,34 @@ struct WorkspacePersistenceTests {
         #expect(reloaded?.keyGroupIndex == 0)
     }
 
+    /// S36 新增的 sidebar/preview pane 字段：roundtrip 保值，旧快照（无字段）解码为 nil。
+    @Test
+    func sidebarAndPreviewPaneFieldsRoundTripAndTolerateLegacySnapshots() throws {
+        let suite = makeDefaults()
+        let persistence = WorkspacePersistence(defaults: suite)
+        var window = makeWindowState(cwd: "/tmp")
+        window.isSidebarVisible = false
+        window.isPreviewPaneVisible = true
+        persistence.persist(WorkspaceSessionState(
+            groups: [WorkspaceGroupState(windows: [window], keyWindowIndex: 0)],
+            keyGroupIndex: 0
+        ))
+        let reloaded = WorkspacePersistence(defaults: suite).loadSessionState()
+        #expect(reloaded?.groups.first?.windows.first?.isSidebarVisible == false)
+        #expect(reloaded?.groups.first?.windows.first?.isPreviewPaneVisible == true)
+
+        // S36 之前的快照没有这两个 key，必须能解码且为 nil（restore 侧回退默认值）。
+        let legacySnapshot = """
+        {"groups":[{"windows":[{"cwd":"/old","isCustomTitle":false,"mode":"finderFirst",
+        "isTerminalVisible":false,"terminalStates":[]}],"keyWindowIndex":0}],"keyGroupIndex":0}
+        """.data(using: .utf8)!
+        suite.set(legacySnapshot, forKey: WorkspacePersistence.sessionStateKey)
+        let legacy = WorkspacePersistence(defaults: suite).loadSessionState()
+        #expect(legacy?.groups.first?.windows.first?.cwd == "/old")
+        #expect(legacy?.groups.first?.windows.first?.isSidebarVisible == nil)
+        #expect(legacy?.groups.first?.windows.first?.isPreviewPaneVisible == nil)
+    }
+
     @Test
     func migratesLegacyFlatListToSingleGroup() throws {
         let suite = makeDefaults()

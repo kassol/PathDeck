@@ -310,28 +310,9 @@ final class GhosttySurfaceView: NSView {
         }
     }
 
-    private struct ReservedShortcut: Hashable {
-        let char: Character
-        let shift: Bool
-        let option: Bool
-    }
-
-    private static let appReservedShortcuts: Set<ReservedShortcut> = {
-        var s = Set<ReservedShortcut>()
-        for c: Character in ["t", "w", "o", "f", "q", ",", "d"] {
-            s.insert(.init(char: c, shift: false, option: false))
-        }
-        for n in 1...9 {
-            s.insert(.init(char: Character("\(n)"), shift: false, option: false))
-        }
-        for c: Character in ["t", "n", "p", "r", "."] {
-            s.insert(.init(char: c, shift: true, option: false))
-        }
-        s.insert(.init(char: "c", shift: false, option: true))
-        s.insert(.init(char: "\u{7F}", shift: false, option: false))
-        s.insert(.init(char: "\u{F700}", shift: false, option: false))
-        return s
-    }()
+    /// App 保留的 ⌘ 组合由 ShortcutRegistry 派生（S36 收束），不再手工维护。
+    private static let appReservedShortcuts: Set<TerminalReservedKey> =
+        ShortcutRegistry.terminalReservedKeys
 
     private static let ctrlReservedKeycodes: Set<UInt16> = [48, 50]
 
@@ -341,10 +322,6 @@ final class GhosttySurfaceView: NSView {
 
         if flags.contains(.control), !flags.contains(.command) {
             if Self.ctrlReservedKeycodes.contains(event.keyCode) {
-                return super.performKeyEquivalent(with: event)
-            }
-            if flags.contains(.shift),
-               event.charactersIgnoringModifiers?.lowercased() == "n" {
                 return super.performKeyEquivalent(with: event)
             }
             if markedText != nil {
@@ -360,7 +337,7 @@ final class GhosttySurfaceView: NSView {
 
         if let chars = event.charactersIgnoringModifiers?.lowercased(),
            let first = chars.first {
-            let shortcut = ReservedShortcut(
+            let shortcut = TerminalReservedKey(
                 char: first,
                 shift: event.modifierFlags.contains(.shift),
                 option: event.modifierFlags.contains(.option)

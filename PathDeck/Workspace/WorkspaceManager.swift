@@ -62,7 +62,8 @@ final class WorkspaceManager {
         }()
         let controller = WorkspaceController(
             workspace: workspace,
-            viewState: WorkspaceViewState(),
+            // 新窗口的 preview pane 显隐用旧全局偏好值作默认（S36 起 per-window 记忆）。
+            viewState: WorkspaceViewState(isPreviewPaneVisible: preferences.isPreviewPaneVisible),
             manager: self,
             engine: engine,
             frame: inheritedFrame
@@ -132,7 +133,9 @@ final class WorkspaceManager {
             isTerminalVisible: w.isTerminalVisible,
             terminalAnchorCwd: w.anchorCwdPath.map { URL(fileURLWithPath: $0) },
             isCustomTitle: w.isCustomTitle,
-            customTitle: w.customTitle
+            customTitle: w.customTitle,
+            isSidebarVisible: w.isSidebarVisible ?? true,
+            isPreviewPaneVisible: w.isPreviewPaneVisible ?? preferences.isPreviewPaneVisible
         )
         let controller = WorkspaceController(
             workspace: workspace,
@@ -281,7 +284,9 @@ final class WorkspaceManager {
             isTerminalVisible: c.viewState.isTerminalVisible,
             anchorCwdPath: c.viewState.terminalAnchorCwd?.path(percentEncoded: false),
             terminalStates: termStates,
-            activeTerminalIndex: activeIdx
+            activeTerminalIndex: activeIdx,
+            isSidebarVisible: c.viewState.isSidebarVisible,
+            isPreviewPaneVisible: c.viewState.isPreviewPaneVisible
         )
     }
 

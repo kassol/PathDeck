@@ -18,8 +18,17 @@ struct WorkspaceRootView: View {
     private var viewState: WorkspaceViewState { controller.viewState }
     private var store: TerminalSessionStore { controller.store }
 
+    /// Sidebar 显隐（per-window Session State）↔ NavigationSplitView 列可见性。
+    /// 系统 toolbar 的 sidebar toggle 与 ⌘B 菜单命令都经由这一个绑定收敛。
+    private var sidebarVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { viewState.isSidebarVisible ? .all : .detailOnly },
+            set: { viewState.isSidebarVisible = ($0 != .detailOnly) }
+        )
+    }
+
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: sidebarVisibility) {
             SidebarView(
                 currentURL: workspace.currentURL,
                 onNavigate: { url in workspace.navigate(to: url) }
@@ -45,11 +54,11 @@ struct WorkspaceRootView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        preferences.isPreviewPaneVisible.toggle()
+                        viewState.isPreviewPaneVisible.toggle()
                     } label: {
                         Image(systemName: "sidebar.right")
                     }
-                    .help(LocalizedStringKey(preferences.isPreviewPaneVisible ? "Hide Preview Pane" : "Show Preview Pane"))
+                    .help(LocalizedStringKey(viewState.isPreviewPaneVisible ? "Hide Preview Pane" : "Show Preview Pane"))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if viewState.mode == .finderFirst {
@@ -94,6 +103,16 @@ struct WorkspaceRootView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
+        .overlay {
+            // 长按 ⌘ 快捷键浮窗：纯展示不拦截交互；显隐由 WorkspaceController
+            // 的 overlay monitor 经 viewState 驱动。
+            if viewState.isShortcutOverlayVisible {
+                ShortcutOverlayView()
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: viewState.isShortcutOverlayVisible)
         .focusedSceneValue(\.activeWorkspaceController, controller)
         .onAppear { controller.installShortcutMonitors() }
         .onDisappear { controller.removeShortcutMonitors() }
@@ -171,7 +190,7 @@ struct WorkspaceRootView: View {
                     onColumnResize: { id, width in preferences.columnWidths[id] = width }
                 )
 
-                if preferences.isPreviewPaneVisible {
+                if viewState.isPreviewPaneVisible {
                     Divider()
                     PreviewPane(
                         selectedURLs: workspace.selectedURLs,
@@ -463,6 +482,8 @@ private struct WorkspacePersistenceModifier: ViewModifier {
         content
             .onChange(of: controller.store.sessions.count) { _, _ in controller.manager?.persistSession() }
             .onChange(of: controller.viewState.isTerminalVisible) { _, _ in controller.manager?.persistSession() }
+            .onChange(of: controller.viewState.isSidebarVisible) { _, _ in controller.manager?.persistSession() }
+            .onChange(of: controller.viewState.isPreviewPaneVisible) { _, _ in controller.manager?.persistSession() }
             .onChange(of: controller.viewState.mode) { _, _ in controller.manager?.persistSession() }
             .onChange(of: controller.viewState.activeTerminalID) { _, _ in controller.manager?.persistSession() }
             .onChange(of: controller.workspace.currentURL) { _, _ in controller.manager?.persistSession() }

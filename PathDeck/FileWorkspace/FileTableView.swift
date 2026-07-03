@@ -172,8 +172,14 @@ struct FileTableView: NSViewRepresentable {
         weak var coordinator: Coordinator?
 
         override func keyDown(with event: NSEvent) {
-            if event.keyCode == 36, selectedRow >= 0 {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // Return = 重命名（Finder 语义，纯键，⌘↩ 属 Send Path 菜单不落到这里兜底触发）
+            if event.keyCode == 36, flags.isEmpty, selectedRow >= 0 {
                 onReturnKey?(selectedRow)
+            } else if event.keyCode == 125, flags == .command,
+                      selectedRowIndexes.count == 1, selectedRow >= 0 {
+                // ⌘↓ = 打开选中项（与 ⌘↑ 上级目录对称）
+                coordinator?.openRow(selectedRow)
             } else if event.keyCode == 49 {
                 if QLPreviewPanel.sharedPreviewPanelExists(),
                    let panel = QLPreviewPanel.shared(), panel.isVisible {
@@ -452,7 +458,11 @@ struct FileTableView: NSViewRepresentable {
         // MARK: - Double Click
 
         @objc func handleDoubleClick(_ sender: NSOutlineView) {
-            let row = sender.clickedRow
+            openRow(sender.clickedRow)
+        }
+
+        /// 双击与 ⌘↓ 共用的打开路径：目录进入，文件交给系统默认 app。
+        func openRow(_ row: Int) {
             guard row >= 0, let item = itemForRow(row) else { return }
             if item.isDirectory {
                 onOpen(item)

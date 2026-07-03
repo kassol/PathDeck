@@ -33,9 +33,39 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
     private var closeTabMonitor: Any?
     private var newTabMonitor: Any?
     private var tabSwitchMonitor: Any?
+    private var overlayMonitor: Any?
+
+    /// 长按 ⌘ 浮窗状态机；可见性经回调写入 viewState 驱动 SwiftUI overlay。
+    private let overlayTracker = ShortcutOverlayHoldTracker()
 
     func installShortcutMonitors() {
         removeShortcutMonitors()
+        overlayTracker.onVisibilityChange = { [weak self] visible in
+            self?.viewState.isShortcutOverlayVisible = visible
+        }
+        // 观察型 monitor：永远 return event 不吞，flagsChanged 照常到达终端的修饰键转发。
+        let overlayMask: NSEvent.EventTypeMask = [
+            .flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        ]
+        overlayMonitor = NSEvent.addLocalMonitorForEvents(matching: overlayMask) { [weak self] event in
+            guard let self else { return event }
+            guard NSApp.keyWindow == self.window else {
+                self.overlayTracker.reset()
+                return event
+            }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let commandHeld = flags.contains(.command)
+            switch event.type {
+            case .flagsChanged:
+                self.overlayTracker.flagsChanged(commandOnly: flags == .command,
+                                                 commandHeld: commandHeld)
+            case .keyDown:
+                self.overlayTracker.keyDown(commandHeld: commandHeld)
+            default:
+                self.overlayTracker.mouseDown(commandHeld: commandHeld)
+            }
+            return event
+        }
         closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
@@ -92,6 +122,8 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
         if let m = closeTabMonitor { NSEvent.removeMonitor(m); closeTabMonitor = nil }
         if let m = newTabMonitor { NSEvent.removeMonitor(m); newTabMonitor = nil }
         if let m = tabSwitchMonitor { NSEvent.removeMonitor(m); tabSwitchMonitor = nil }
+        if let m = overlayMonitor { NSEvent.removeMonitor(m); overlayMonitor = nil }
+        overlayTracker.reset()
     }
 
     /// 用 WorkspaceManager.openNewWindow 创建，不直接 init。
@@ -204,6 +236,11 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         manager?.controllerDidBecomeKey(self)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // ⌘⇥ 切走 app / 切到其他窗口时收起浮窗（松开 ⌘ 的 flagsChanged 不会再送达本窗口）。
+        overlayTracker.reset()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {

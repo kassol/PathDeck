@@ -15,7 +15,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 | `WorkspaceModel.swift` | `@Observable` 工作区状态：当前目录 + items/allItems + 导航 + 排序 + 隐藏文件 + 选中文件 + 文件操作（trash/rename/newFolder/pasteFiles/duplicateItems）+ 搜索过滤 + 打开文件夹 + `reveal(_ fileURLs: [URL])`（跨目录导航首项父目录 + 同父目录多选高亮，外部入口/Open Selection 用）+ `revealSelection`（命令式多选+滚动信号）。持有 FSWatcher 做目录实时刷新。多实例设计：S32 起每个 `WorkspaceController`（即每个 NSWindow workspace）独立持有一个实例，`init(root:sortColumn:sortAscending:showHidden:)` 必传 root，不读 UserDefaults；sort/showHidden 由全局 `WorkspacePreferences` 单实例统一管理，所有 window 共享 |
 | `FSWatcher.swift` | FSEvents 文件变化监听器：递归监听根目录 → 0.5s coalesce 去抖 → 传 dirty 目录集合回调；支持 `setExpandedDirectories` 匹配已展开子目录事件 |
 | `OutlineDataSource.swift` | `NSOutlineView` 树状数据层（`FileNode` 引用包装 + rootNodes/childrenCache + nodePool identity 复用 + per-level 排序 + 递归 clear）|
-| `FileTableView.swift` | `NSViewRepresentable` 包 `NSOutlineView`（`FileNSOutlineView` 子类），目录就地展开/折叠 + 搜索 flat 降级 + 右键菜单 + inline rename + Quick Look + 拖拽源 |
+| `FileTableView.swift` | `NSViewRepresentable` 包 `NSOutlineView`（`FileNSOutlineView` 子类），目录就地展开/折叠 + 搜索 flat 降级 + 右键菜单 + inline rename（Return 纯键触发）+ ⌘↓ 打开（与双击共用 `openRow`）+ Quick Look + 拖拽源 |
 | `RecentFolders.swift` | 最近打开文件夹管理（`@Observable`，UserDefaults 持久化，10 项上限，去重） |
 | `SearchBarView.swift` | `NSSearchField` 的 `NSViewRepresentable` 包装，实时回调 + Esc 关闭 |
 | `ShellEscape.swift` | POSIX shell 路径转义纯函数（单引号包裹，Send Path to Terminal 用） |
@@ -35,6 +35,7 @@ Finder-like 文件工作台：目录浏览、路径导航、排序、隐藏文�
 
 ## 变更日志
 
+- 2026-07-03 S36 键盘打开路径：`FileNSOutlineView.keyDown` 的 Return 分支加 `flags.isEmpty` 守卫（⌘↩ 属 Send Path to Terminal 菜单，不落入重命名兜底）；新增 ⌘↓（keyCode 125 + ⌘，单选时）经 `Coordinator.openRow` 打开选中项——`handleDoubleClick` 重构为共用该路径（目录 `onOpen` 进入、文件 `NSWorkspace.open`）。键位语义决策见 `docs/adr/0001-return-renames-cmd-down-opens.md`。
 - 2026-07-02 列宽/排序持久化：`FileTableView` 新增 `initialColumnWidths`/`initialSortColumn`/`initialSortAscending`（仅 makeNSView 读取：建列应用持久化列宽、列头排序指示箭头对齐持久化排序，原硬编码 name↑）+ `onColumnResize` 回调（`outlineViewColumnDidResize` 委托 → `WorkspacePreferences.columnWidths`；`columnSetupFinished` 旗标抑制建列期间的同步触发）。测试见 `FileTableColumnWidthTests`。
 - 2026-07-02 列宽还原 bug 修复：`FileTableView` 的 `NSOutlineView` 设 `autoresizesOutlineColumn = false`。默认 true 时 `reloadItem(nil, reloadChildren: true)` 内部会把 outline column（name 列）resize 到适配内容（KVO 调用栈实锤），用户手动调整的列宽在任何 reload 路径（删除/重命名/新建/FSWatcher 外部变更）都会被还原到 minWidth。回归测试 `FileTableColumnWidthTests`（真 NSWindow + 完整 WorkspaceRootView + runloop pump，断言列宽保持 + NSOutlineView 实例不被重建）。
 - 2026-06-30 S35 File Edit Actions：`FileNSOutlineView` 实现标准 Cocoa action selector（`copy:`/`paste:`/`moveItemHere:`/`duplicate:`）+ `validateUserInterfaceItem`，Edit 菜单 pasteboard section 手动重建（Copy/Paste/Move Item Here ⌘⌥V/Duplicate ⌘D/Select All/Copy Current Path）。`WorkspaceModel` 新增 `pasteFiles(_:operation:)`（copy/move + Finder 式 " copy" 重名递增）+ `duplicateItems()`。右键菜单追加 Duplicate（文件选中时）和 Paste（空白区）。`appReservedShortcuts` 新增 `"d"` 避免终端拦截 ⌘D。NSPasteboard 双类型写入（`.fileURL` + `.string`）。

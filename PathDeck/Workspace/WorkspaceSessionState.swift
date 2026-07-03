@@ -10,6 +10,9 @@ struct WorkspaceWindowState: Codable {
     let anchorCwdPath: String?
     let terminalStates: [TerminalTabState]
     let activeTerminalIndex: Int?
+    /// S36 起 per-window 记录；可选字段兼容旧快照（缺失时新窗口用默认/旧全局偏好）。
+    var isSidebarVisible: Bool? = nil
+    var isPreviewPaneVisible: Bool? = nil
 }
 
 /// 一个 NSWindow tab group（含若干合入同一 title bar 的 window）。

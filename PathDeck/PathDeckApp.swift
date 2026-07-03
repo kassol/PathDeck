@@ -145,12 +145,12 @@ private struct TerminalCommands: Commands {
                 c.createTerminal()
                 if !c.viewState.isTerminalVisible { c.viewState.isTerminalVisible = true }
             }
-            .keyboardShortcut("n", modifiers: [.control, .shift])
+            .keyboardShortcut("`", modifiers: [.control, .shift])
 
             Button("Send Path to Terminal") {
                 sendPath()
             }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .keyboardShortcut(.return, modifiers: .command)
             .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
         }
     }
@@ -226,10 +226,17 @@ private struct FileCommands: Commands {
 private struct ViewCommands: Commands {
     var body: some Commands {
         CommandMenu("View") {
-            Button("Toggle Preview Pane") {
-                WorkspacePreferences.shared.isPreviewPaneVisible.toggle()
+            // Sidebar / Preview Pane 显隐是 per-window Session State（S36），
+            // 走 keyWorkspaceController() 严格读；Settings 为 key 时 no-op。
+            Button("Toggle Sidebar") {
+                keyWorkspaceController()?.viewState.isSidebarVisible.toggle()
             }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .keyboardShortcut("b")
+
+            Button("Toggle Preview Pane") {
+                keyWorkspaceController()?.viewState.isPreviewPaneVisible.toggle()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
 
             Button(LocalizedStringKey(WorkspacePreferences.shared.showHidden ? "Hide Hidden Files" : "Show Hidden Files")) {
                 workspaceManager()?.toggleHidden()
