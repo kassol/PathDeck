@@ -21,11 +21,12 @@ struct WindowFramePersistenceTests {
     }
 
     /// 任一可见屏幕内的测试 frame（避免越界防护把它过滤掉）。
-    /// 尺寸/偏移必须整体落在可用区内——CI headless runner 虚拟屏可用区仅约 1024×677，
-    /// 超出的窗口会被 AppKit constrain 改写 frame，断言随之失真（2026-07-03 实测）。
+    /// 尺寸约束两头卡（2026-07-03 CI 实测）：整体须落在可用区内（headless runner 虚拟屏
+    /// 仅约 1024×677，超出被 AppKit constrain 改写）；高度须 ≥ 532（SwiftUI minHeight 480 +
+    /// 窗口 chrome ≈52，低于此值布局 pass 会把窗口顶大——本地时序碰不到，CI 必现）。
     private func onScreenFrame(size: NSSize) throws -> NSRect {
         let visible = try #require(NSScreen.screens.first?.visibleFrame)
-        let origin = NSPoint(x: visible.minX + 60, y: visible.minY + 60)
+        let origin = NSPoint(x: visible.minX + 40, y: visible.minY + 40)
         let rect = NSRect(origin: origin, size: size)
         try #require(visible.contains(rect), "测试 frame 超出屏幕可用区，断言无意义")
         return rect
@@ -39,7 +40,7 @@ struct WindowFramePersistenceTests {
         // 注意：close() 会触发 controllerWillClose 的立即持久化，把快照冲成空组，
         // 所以断言完成前不能关 A 的窗口。
         defer { c.close() }
-        let frame = try onScreenFrame(size: NSSize(width: 760, height: 500))
+        let frame = try onScreenFrame(size: NSSize(width: 760, height: 560))
         c.window?.setFrame(frame, display: false)
         managerA.persistSessionImmediately()
 
@@ -85,7 +86,7 @@ struct WindowFramePersistenceTests {
         let a = manager.openNewWindow(cwd: URL(fileURLWithPath: "/tmp"))
         defer { a.close() }
         // 级联偏移 (x+24, y-24) 也要留在可用区内：origin 再抬高 24。
-        var frame = try onScreenFrame(size: NSSize(width: 760, height: 500))
+        var frame = try onScreenFrame(size: NSSize(width: 760, height: 560))
         frame.origin.y += 24
         a.window?.setFrame(frame, display: false)
 
