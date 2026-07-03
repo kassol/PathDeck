@@ -10,6 +10,24 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
     let store: TerminalSessionStore
     let viewState: WorkspaceViewState
 
+    /// 本窗口终端的 Close History（⌘⇧T 终端焦点重开；仅进程内）。
+    let closedTerminals = CloseHistoryStack<ClosedTerminalRecord>()
+
+    /// 所属 tab 组的弱缓存：windowWillClose 时窗口已脱组拿不到组关系，
+    /// 在 becomeKey/resignKey 时刷新，供 Close History 记录重开归位目标。
+    private(set) weak var lastKnownTabGroup: NSWindowTabGroup?
+
+    /// becomeKey/resignKey 自动刷新；程序化 addTabbedWindow 后（openNewWindow /
+    /// reopenClosedWindow）需显式调用——测试与非活跃 app 下 key 事件不可靠。
+    func refreshTabGroupCache() {
+        guard let group = window?.tabGroup else {
+            lastKnownTabGroup = nil
+            return
+        }
+        // 单窗组不算「同组关系」；多窗组才值得重开归位。
+        lastKnownTabGroup = group.windows.count > 1 ? group : nil
+    }
+
     weak var manager: WorkspaceManager?
     weak var engine: GhosttyTerminalEngine?
 
@@ -32,6 +50,7 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
 
     private var closeTabMonitor: Any?
     private var newTabMonitor: Any?
+    private var reopenMonitor: Any?
     private var tabSwitchMonitor: Any?
     private var overlayMonitor: Any?
 
@@ -95,6 +114,21 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
             self.manager?.openNewWindow(cwd: self.workspace.currentURL, tabbedTo: self.window)
             return nil
         }
+        // ⌘⇧T 双语义对称 ⌘W：终端焦点 → 重开终端 session，否则 → 重开 workspace 窗口。
+        // 与 ⌘T 同理走 monitor（AppKit first responder 下 SwiftUI keyboardShortcut 不派发）；
+        // 栈空 no-op 但仍吞事件（菜单兜底走同一 action，不会二次触发）。
+        reopenMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+                  event.charactersIgnoringModifiers?.lowercased() == "t",
+                  NSApp.keyWindow == self.window else { return event }
+            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView {
+                self.reopenClosedTerminal()
+            } else {
+                self.manager?.reopenClosedWindow()
+            }
+            return nil
+        }
         tabSwitchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, NSApp.keyWindow == self.window else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -121,6 +155,7 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
     func removeShortcutMonitors() {
         if let m = closeTabMonitor { NSEvent.removeMonitor(m); closeTabMonitor = nil }
         if let m = newTabMonitor { NSEvent.removeMonitor(m); newTabMonitor = nil }
+        if let m = reopenMonitor { NSEvent.removeMonitor(m); reopenMonitor = nil }
         if let m = tabSwitchMonitor { NSEvent.removeMonitor(m); tabSwitchMonitor = nil }
         if let m = overlayMonitor { NSEvent.removeMonitor(m); overlayMonitor = nil }
         overlayTracker.reset()
@@ -196,10 +231,21 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
         return session
     }
 
-    func closeTerminal(_ id: UUID) {
+    /// 关闭终端 session。recordHistory：用户关闭手势（⌘W、关闭按钮、命令）入 Close History；
+    /// engine 回调（shell exit）传 false——主动终止不算误关，不可被 ⌘⇧T 复活。
+    func closeTerminal(_ id: UUID, recordHistory: Bool = true) {
         guard let engine else { return }
         engine.closeSession(id)
-        guard store.remove(id) != nil else { return }
+        let snapshot = store.session(id)
+        guard let index = store.remove(id) else { return }
+        if recordHistory, let snapshot {
+            closedTerminals.push(ClosedTerminalRecord(
+                title: snapshot.title,
+                cwd: snapshot.currentCwd,
+                isManuallyRenamed: snapshot.isManuallyRenamed,
+                index: index
+            ))
+        }
         if viewState.activeTerminalID == id {
             viewState.activeTerminalID = store.sessions.last?.id
         }
@@ -210,6 +256,21 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
             }
         }
         manager?.persistSession()
+    }
+
+    /// 重开最近关闭的终端（⌘⇧T 终端焦点）：按快照重建——恢复 cwd、标题与原 tab 位置，
+    /// shell 进程状态不可恢复。栈空 no-op。
+    func reopenClosedTerminal() {
+        guard let record = closedTerminals.pop(),
+              let session = createTerminal(cwdOverride: record.cwd) else { return }
+        if record.isManuallyRenamed {
+            renameTerminal(session.id, to: record.title, manual: true)
+        }
+        reorderTerminal(source: session.id,
+                        to: min(record.index, store.sessions.count - 1))
+        if !viewState.isTerminalVisible {
+            viewState.isTerminalVisible = true
+        }
     }
 
     /// 重命名 terminal session：包装 store.rename + 触发持久化。
@@ -275,10 +336,13 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
     // MARK: - Window delegate
 
     func windowDidBecomeKey(_ notification: Notification) {
+        refreshTabGroupCache()
         manager?.controllerDidBecomeKey(self)
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // 同组新窗成 key 时本窗 resign——两个时机合起来覆盖组关系变化。
+        refreshTabGroupCache()
         // ⌘⇥ 切走 app / 切到其他窗口时收起浮窗（松开 ⌘ 的 flagsChanged 不会再送达本窗口）。
         overlayTracker.reset()
     }

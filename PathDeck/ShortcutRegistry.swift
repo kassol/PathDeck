@@ -234,6 +234,11 @@ enum ShortcutRegistry {
                          if let id = c.viewState.activeTerminalID { c.closeTerminal(id) }
                      },
                      isEnabled: { $0?.viewState.activeTerminalID != nil }),
+        ShortcutSpec(id: "reopenClosedTerminal", keys: ["⌘", "⇧", "T"],
+                     title: String(localized: "Reopen Closed Terminal"),
+                     group: .terminal, context: .terminalFocus,
+                     action: requiresController { $0.reopenClosedTerminal() },
+                     isEnabled: { $0?.closedTerminals.isEmpty == false }),
 
         // MARK: Tab 与窗口
         ShortcutSpec(id: "newTab", keys: ["⌘", "T"],
@@ -265,6 +270,12 @@ enum ShortcutRegistry {
                      title: String(localized: "Previous Tab"),
                      group: .tabs, context: .global,
                      action: requiresController { $0.window?.selectPreviousTab(nil) }),
+        ShortcutSpec(id: "reopenClosedWindow", keys: ["⌘", "⇧", "T"],
+                     title: String(localized: "Reopen Closed Tab"),
+                     group: .tabs, context: .fileFocus,
+                     reservedInTerminal: [.init(char: "t", shift: true)],
+                     action: requiresController { $0.manager?.reopenClosedWindow() },
+                     isEnabled: { $0?.manager?.closedWindows.isEmpty == false }),
         ShortcutSpec(id: "renameWorkspace", keys: ["⌘", "⇧", "R"],
                      title: String(localized: "Rename Workspace…"),
                      group: .tabs, context: .global,
@@ -286,10 +297,6 @@ enum ShortcutRegistry {
         // MARK: 预留键位（Reserved Shortcut）
         ShortcutSpec(id: "reservedCommandPalette", keys: ["⌘", "⇧", "P"],
                      title: "Command Palette",
-                     group: .system, context: .global,
-                     isReserved: true, showsInOverlay: false),
-        ShortcutSpec(id: "reservedReopenClosedTab", keys: ["⌘", "⇧", "T"],
-                     title: "Reopen Closed Tab",
                      group: .system, context: .global,
                      isReserved: true, showsInOverlay: false),
     ]

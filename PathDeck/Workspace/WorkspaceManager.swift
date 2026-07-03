@@ -11,6 +11,9 @@ final class WorkspaceManager {
     /// 用户视角的「当前」workspace，避免 fallback 到 controllers.first 误导持久化与路由。
     private var lastActiveControllerID: ObjectIdentifier?
 
+    /// 关闭窗口的 Close History（⌘⇧T 文件焦点重开；全局共享、仅进程内）。
+    let closedWindows = CloseHistoryStack<ClosedWindowRecord>()
+
     let preferences: WorkspacePreferences
     let pinnedFolders: PinnedFolders
     let engine: GhosttyTerminalEngine
@@ -71,6 +74,8 @@ final class WorkspaceManager {
         controllers.append(controller)
         if let existing, let window = controller.window {
             existing.addTabbedWindow(window, ordered: .above)
+            controller.refreshTabGroupCache()
+            (existing.windowController as? WorkspaceController)?.refreshTabGroupCache()
         }
         controller.window?.makeKeyAndOrderFront(nil)
         persistSession()
@@ -167,6 +172,26 @@ final class WorkspaceManager {
             controller.window?.title = title
         }
         return controller
+    }
+
+    /// 重开最近关闭的 workspace 窗口（⌘⇧T 文件焦点）：按快照整窗重建（Reopen 语义——
+    /// cwd、布局、终端组构成，shell 状态不可恢复）。原 tab 组仍有存活窗口 → tab 回原组；
+    /// 否则按关闭时 frame 恢复为独立窗口。栈空 no-op。
+    func reopenClosedWindow() {
+        guard let record = closedWindows.pop() else { return }
+        let controller = restoreController(from: record.state)
+        controllers.append(controller)
+        if let hostWindow = record.hostGroup?.windows.first(where: { $0 !== controller.window }),
+           let window = controller.window {
+            hostWindow.addTabbedWindow(window, ordered: .above)
+            controller.refreshTabGroupCache()
+            (hostWindow.windowController as? WorkspaceController)?.refreshTabGroupCache()
+        } else if let frame = record.frame,
+                  let validated = Self.validatedOnScreen(frame) {
+            controller.window?.setFrame(validated, display: false)
+        }
+        controller.window?.makeKeyAndOrderFront(nil)
+        persistSession()
     }
 
     /// frame 有效且与任一可见屏幕相交时原样返回，否则 nil（调用方回退默认居中）。
@@ -298,6 +323,13 @@ final class WorkspaceManager {
     }
 
     func controllerWillClose(_ controller: WorkspaceController) {
+        // 入 Close History：此刻 store.sessions 仍完整（windowWillClose 只关 engine 侧），
+        // windowStateFor 能捕获完整终端组；组关系取 controller 存活期缓存（此刻已脱组）。
+        closedWindows.push(ClosedWindowRecord(
+            state: windowStateFor(controller),
+            frame: controller.window?.frame,
+            hostGroup: controller.lastKnownTabGroup
+        ))
         if lastActiveControllerID == ObjectIdentifier(controller) {
             lastActiveControllerID = nil
         }
@@ -327,7 +359,8 @@ final class WorkspaceManager {
 
     private func handleEngineSessionClose(_ id: UUID) {
         guard let controller = findControllerOwning(sessionID: id) else { return }
-        controller.closeTerminal(id)
+        // shell exit 是主动终止，不入 Close History（不可被 ⌘⇧T 复活）。
+        controller.closeTerminal(id, recordHistory: false)
     }
 
     private func handleEngineCwdChange(_ id: UUID, url: URL) {
