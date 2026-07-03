@@ -181,12 +181,7 @@ struct FileTableView: NSViewRepresentable {
                 // ⌘↓ = 打开选中项（与 ⌘↑ 上级目录对称）
                 coordinator?.openRow(selectedRow)
             } else if event.keyCode == 49 {
-                if QLPreviewPanel.sharedPreviewPanelExists(),
-                   let panel = QLPreviewPanel.shared(), panel.isVisible {
-                    panel.orderOut(nil)
-                } else {
-                    QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
-                }
+                ShortcutRegistry.toggleQuickLookPanel()
             } else {
                 super.keyDown(with: event)
             }

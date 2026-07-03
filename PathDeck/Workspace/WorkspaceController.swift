@@ -232,6 +232,46 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
         manager?.persistSession()
     }
 
+    // MARK: - Workspace commands（菜单 / Command Palette 经 ShortcutRegistry action 调用）
+
+    /// Rename Workspace… 对话框（⌘⇧R）。
+    func promptRenameWorkspace() {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Rename Workspace")
+        alert.informativeText = String(localized: "Empty to restore the directory name.")
+        alert.addButton(withTitle: String(localized: "Rename"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = viewState.customTitle ?? workspace.currentURL.lastPathComponent
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            viewState.isCustomTitle = false
+            viewState.customTitle = nil
+            window?.title = workspace.currentURL.lastPathComponent
+        } else {
+            viewState.isCustomTitle = true
+            viewState.customTitle = trimmed
+            window?.title = trimmed
+        }
+        manager?.persistSession()
+    }
+
+    /// 把选中项路径以 shell-escaped 形式写入活动终端（⌘↩）。
+    func sendSelectionPathToTerminal() {
+        guard !workspace.selectedURLs.isEmpty else { return }
+        if !viewState.isTerminalVisible {
+            viewState.isTerminalVisible = true
+            if store.sessions.isEmpty { createTerminal() }
+        }
+        guard let activeID = viewState.activeTerminalID else { return }
+        let escaped = ShellEscape.escapeMultiple(
+            workspace.selectedURLs.map { $0.path(percentEncoded: false) }
+        )
+        DispatchQueue.main.async { self.engineHandle.writeText(escaped, to: activeID) }
+    }
+
     // MARK: - Window delegate
 
     func windowDidBecomeKey(_ notification: Notification) {

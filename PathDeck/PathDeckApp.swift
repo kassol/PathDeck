@@ -35,6 +35,13 @@ private func workspaceManager() -> WorkspaceManager? {
     (NSApp.delegate as? AppDelegate)?.workspaceManager
 }
 
+/// 菜单命令统一入口：动作定义在 ShortcutRegistry 命令表（S37）。controller 解析仍严格
+/// keyWindow；workspace 型命令收到 nil 时由命令表 no-op，responder-chain / 全局偏好型照常执行。
+@MainActor
+private func runCommand(_ id: String) {
+    ShortcutRegistry.spec(id)?.action?(keyWorkspaceController())
+}
+
 // MARK: - CLI
 
 private struct CLICommands: Commands {
@@ -56,10 +63,7 @@ private struct TabCommands: Commands {
             // 文件焦点 → 新 workspace tab）；此处 action + keyboardShortcut 仅用于菜单显示 ⌘T，以及
             // Settings/alert 为 key 时的兜底（monitor 严格 keyWindow，那时 return event 放行给本 action）。
             Button("New Tab") {
-                guard let manager = workspaceManager() else { return }
-                let cwd = manager.keyController?.workspace.currentURL
-                    ?? FileManager.default.homeDirectoryForCurrentUser
-                manager.openNewWindow(cwd: cwd, tabbedTo: manager.keyController?.window)
+                runCommand("newTab")
             }
             .keyboardShortcut("t")
 
@@ -68,16 +72,16 @@ private struct TabCommands: Commands {
             // Next/Previous Tab 的快捷键由 WorkspaceRootView 的 NSEvent monitor 处理（严格 keyWindow），
             // 此处仅保留 menu item 文字（带兜底点击响应），不绑 SwiftUI keyboardShortcut。
             Button("Next Tab") {
-                keyWorkspaceController()?.window?.selectNextTab(nil)
+                runCommand("nextTab")
             }
             Button("Previous Tab") {
-                keyWorkspaceController()?.window?.selectPreviousTab(nil)
+                runCommand("previousTab")
             }
 
             Divider()
 
             Button("Rename Workspace…") {
-                renameActiveWorkspace()
+                runCommand("renameWorkspace")
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
 
@@ -85,7 +89,7 @@ private struct TabCommands: Commands {
 
             // 1..9 menu items 仅显示，不绑 SwiftUI keyboardShortcut；快捷键由 WorkspaceRootView
             // 的 NSEvent local monitor 显式拦截、严格针对 keyWindow workspace（避免 Settings 为 key
-            // 时通过 fallback 操作后台 workspace）。
+            // 时通过 fallback 操作后台 workspace）。参数化条目，不走命令表 action。
             ForEach(1...9, id: \.self) { n in
                 Button("Tab \(n)") {
                     selectTab(at: n - 1)
@@ -100,31 +104,6 @@ private struct TabCommands: Commands {
               tabs.indices.contains(index) else { return }
         tabs[index].makeKeyAndOrderFront(nil)
     }
-
-    @MainActor
-    private func renameActiveWorkspace() {
-        guard let controller = keyWorkspaceController() else { return }
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Rename Workspace")
-        alert.informativeText = String(localized: "Empty to restore the directory name.")
-        alert.addButton(withTitle: String(localized: "Rename"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        field.stringValue = controller.viewState.customTitle ?? controller.workspace.currentURL.lastPathComponent
-        alert.accessoryView = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
-            controller.viewState.isCustomTitle = false
-            controller.viewState.customTitle = nil
-            controller.window?.title = controller.workspace.currentURL.lastPathComponent
-        } else {
-            controller.viewState.isCustomTitle = true
-            controller.viewState.customTitle = trimmed
-            controller.window?.title = trimmed
-        }
-        controller.manager?.persistSession()
-    }
 }
 
 // MARK: - Terminal commands
@@ -135,39 +114,21 @@ private struct TerminalCommands: Commands {
     var body: some Commands {
         CommandMenu("Terminal") {
             Button("Toggle Terminal") {
-                guard let c = keyWorkspaceController() else { return }
-                c.viewState.isTerminalVisible.toggle()
+                runCommand("toggleTerminal")
             }
             .keyboardShortcut("`", modifiers: .control)
 
             Button("New Terminal") {
-                guard let c = keyWorkspaceController() else { return }
-                c.createTerminal()
-                if !c.viewState.isTerminalVisible { c.viewState.isTerminalVisible = true }
+                runCommand("newTerminal")
             }
             .keyboardShortcut("`", modifiers: [.control, .shift])
 
             Button("Send Path to Terminal") {
-                sendPath()
+                runCommand("sendPathToTerminal")
             }
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
         }
-    }
-
-    @MainActor
-    private func sendPath() {
-        guard let c = keyWorkspaceController(),
-              !c.workspace.selectedURLs.isEmpty else { return }
-        if !c.viewState.isTerminalVisible {
-            c.viewState.isTerminalVisible = true
-            if c.store.sessions.isEmpty { c.createTerminal() }
-        }
-        guard let activeID = c.viewState.activeTerminalID else { return }
-        let escaped = ShellEscape.escapeMultiple(
-            c.workspace.selectedURLs.map { $0.path(percentEncoded: false) }
-        )
-        DispatchQueue.main.async { c.engineHandle.writeText(escaped, to: activeID) }
     }
 }
 
@@ -179,7 +140,7 @@ private struct FileCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Open Folder…") {
-                keyWorkspaceController()?.workspace.openFolder()
+                runCommand("openFolder")
             }
             .keyboardShortcut("o")
 
@@ -203,13 +164,13 @@ private struct FileCommands: Commands {
             Divider()
 
             Button("New Folder") {
-                keyWorkspaceController()?.workspace.newFolder()
+                runCommand("newFolder")
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
         CommandMenu("File Actions") {
             Button("Move to Trash") {
-                keyWorkspaceController()?.workspace.trashItems()
+                runCommand("moveToTrash")
             }
             .keyboardShortcut(.delete, modifiers: .command)
             .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
@@ -227,62 +188,62 @@ private struct ViewCommands: Commands {
     var body: some Commands {
         CommandMenu("View") {
             // Sidebar / Preview Pane 显隐是 per-window Session State（S36），
-            // 走 keyWorkspaceController() 严格读；Settings 为 key 时 no-op。
+            // 严格 key workspace；Settings 为 key 时 no-op。
             Button("Toggle Sidebar") {
-                keyWorkspaceController()?.viewState.isSidebarVisible.toggle()
+                runCommand("toggleSidebar")
             }
             .keyboardShortcut("b")
 
             Button("Toggle Preview Pane") {
-                keyWorkspaceController()?.viewState.isPreviewPaneVisible.toggle()
+                runCommand("togglePreviewPane")
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
 
             Button(LocalizedStringKey(WorkspacePreferences.shared.showHidden ? "Hide Hidden Files" : "Show Hidden Files")) {
-                workspaceManager()?.toggleHidden()
+                runCommand("toggleHiddenFiles")
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .textEditing) {
             Button("Find…") {
-                keyWorkspaceController()?.workspace.isSearching = true
+                runCommand("find")
             }
             .keyboardShortcut("f")
         }
         CommandGroup(replacing: .pasteboard) {
             Button("Copy") {
-                NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+                runCommand("copy")
             }
             .keyboardShortcut("c")
 
             Button("Paste") {
-                NSApp.sendAction(Selector(("paste:")), to: nil, from: nil)
+                runCommand("paste")
             }
             .keyboardShortcut("v")
 
             Button("Move Item Here") {
-                NSApp.sendAction(Selector(("moveItemHere:")), to: nil, from: nil)
+                runCommand("moveItemHere")
             }
             .keyboardShortcut("v", modifiers: [.command, .option])
 
             Divider()
 
             Button("Duplicate") {
-                NSApp.sendAction(Selector(("duplicate:")), to: nil, from: nil)
+                runCommand("duplicate")
             }
             .keyboardShortcut("d")
 
             Divider()
 
             Button("Select All") {
-                NSApp.sendAction(Selector(("selectAll:")), to: nil, from: nil)
+                runCommand("selectAll")
             }
             .keyboardShortcut("a")
 
             Divider()
 
             Button("Copy Current Path") {
-                keyWorkspaceController()?.workspace.copyCurrentPath()
+                runCommand("copyCurrentPath")
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
         }

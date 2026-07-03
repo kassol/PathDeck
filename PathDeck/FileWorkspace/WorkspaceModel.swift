@@ -109,6 +109,22 @@ final class WorkspaceModel {
         revealSelection = targets
     }
 
+    /// 打开选中项（⌘↓ / Open 命令）：单选目录进入，其余交给系统默认应用（与右键 Open 语义一致）。
+    func openSelection() {
+        let urls = selectedURLs
+        if urls.count == 1, let url = urls.first {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false),
+                                              isDirectory: &isDir), isDir.boolValue {
+                navigate(to: url)
+                return
+            }
+        }
+        for url in urls {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     func openFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
