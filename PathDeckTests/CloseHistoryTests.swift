@@ -185,6 +185,28 @@ struct CloseHistoryTests {
                 "原组存活时应 tab 回原组")
     }
 
+    /// 组内窗口全关后重开：hostGroup 失效降级为独立窗口，frame 按快照恢复。
+    @Test
+    func reopenFallsBackToStandaloneWhenGroupIsGone() {
+        let manager = makeManager()
+        let cwd = FileManager.default.temporaryDirectory
+        let host = manager.openNewWindow(cwd: cwd)
+        let hostFrame = host.window!.frame
+        let second = manager.openNewWindow(cwd: cwd, tabbedTo: host.window)
+        second.close()
+        host.close()
+        #expect(manager.controllers.isEmpty)
+        #expect(manager.closedWindows.records.count == 2)
+
+        manager.reopenClosedWindow()   // 重开 host（后关先出）；其缓存组已无存活窗口
+        #expect(manager.controllers.count == 1)
+        let reopened = manager.controllers[0]
+        defer { reopened.close() }
+        #expect(reopened.window?.tabbedWindows == nil
+            || reopened.window?.tabbedWindows?.count == 1, "组已消亡应恢复为独立窗口")
+        #expect(reopened.window?.frame == hostFrame, "独立恢复应还原关闭时 frame")
+    }
+
     @Test
     func reopenEmptyWindowStackIsNoop() {
         let manager = makeManager()

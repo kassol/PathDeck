@@ -57,8 +57,6 @@ private struct CLICommands: Commands {
 // MARK: - Tab commands (NSWindow tabbing)
 
 private struct TabCommands: Commands {
-    @FocusedValue(\.activeWorkspaceController) private var focused
-
     var body: some Commands {
         CommandMenu("Tabs") {
             // Cmd+T 实际由 WorkspaceRootView 的 newTabMonitor 接管（终端焦点 → 新终端 session，
@@ -70,13 +68,13 @@ private struct TabCommands: Commands {
             .keyboardShortcut("t")
 
             // ⌘⇧T 快捷键由 WorkspaceRootView 的 reopenMonitor 双语义分流（终端焦点 → 重开终端），
-            // 此处 action + keyboardShortcut 仅用于菜单显示与 Settings 为 key 时的兜底。
+            // 此处 action + keyboardShortcut 仅用于菜单显示与 Settings 为 key 时的兜底（同 New Tab
+            // 模式：窗口语义 + 全局兜底，不加 disabled——FocusedValue 在 Settings 下为 nil，
+            // disabled 会让兜底失效；空栈点击 no-op 与 Next/Previous Tab 一致）。
             Button("Reopen Closed Tab") {
                 runCommand("reopenClosedWindow")
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled((focused?.manager?.closedWindows.isEmpty ?? true)
-                && (focused?.closedTerminals.isEmpty ?? true))
 
             Divider()
 

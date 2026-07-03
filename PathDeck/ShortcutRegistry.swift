@@ -89,6 +89,13 @@ private func fallbackManager(_ c: WorkspaceController?) -> WorkspaceManager? {
     c?.manager ?? (NSApp.delegate as? AppDelegate)?.workspaceManager
 }
 
+/// New Terminal / New Terminal Tab 共用：建 session 并确保终端面板可见。
+private let createsTerminalSession: @MainActor (WorkspaceController?) -> Void =
+    requiresController { c in
+        c.createTerminal()
+        if !c.viewState.isTerminalVisible { c.viewState.isTerminalVisible = true }
+    }
+
 private let hasSelection: @MainActor (WorkspaceController?) -> Bool = {
     $0?.workspace.selectedURLs.isEmpty == false
 }
@@ -215,10 +222,7 @@ enum ShortcutRegistry {
         ShortcutSpec(id: "newTerminal", keys: ["⌃", "⇧", "`"],
                      title: String(localized: "New Terminal"),
                      group: .terminal, context: .global,
-                     action: requiresController { c in
-                         c.createTerminal()
-                         if !c.viewState.isTerminalVisible { c.viewState.isTerminalVisible = true }
-                     }),
+                     action: createsTerminalSession),
         ShortcutSpec(id: "sendPathToTerminal", keys: ["⌘", "↩"],
                      title: String(localized: "Send Path to Terminal"),
                      group: .terminal, context: .global,
@@ -228,10 +232,7 @@ enum ShortcutRegistry {
         ShortcutSpec(id: "newTerminalTab", keys: ["⌘", "T"],
                      title: String(localized: "New Terminal Tab"),
                      group: .terminal, context: .terminalFocus,
-                     action: requiresController { c in
-                         c.createTerminal()
-                         if !c.viewState.isTerminalVisible { c.viewState.isTerminalVisible = true }
-                     }),
+                     action: createsTerminalSession),
         ShortcutSpec(id: "closeTerminal", keys: ["⌘", "W"],
                      title: String(localized: "Close Terminal"),
                      group: .terminal, context: .terminalFocus,
@@ -279,8 +280,9 @@ enum ShortcutRegistry {
                      title: String(localized: "Reopen Closed Tab"),
                      group: .tabs, context: .fileFocus,
                      reservedInTerminal: [.init(char: "t", shift: true)],
-                     action: requiresController { $0.manager?.reopenClosedWindow() },
-                     isEnabled: { $0?.manager?.closedWindows.isEmpty == false }),
+                     // 窗口栈是全局的，与 newTab 同理允许 Settings 为 key 时兜底执行。
+                     action: { fallbackManager($0)?.reopenClosedWindow() },
+                     isEnabled: { fallbackManager($0)?.closedWindows.isEmpty == false }),
         ShortcutSpec(id: "renameWorkspace", keys: ["⌘", "⇧", "R"],
                      title: String(localized: "Rename Workspace…"),
                      group: .tabs, context: .global,
