@@ -53,10 +53,9 @@ struct ShortcutRegistryTests {
         #expect(keys.contains(.init(char: "c", option: true)))         // ⌘⌥C Copy Path
         #expect(keys.contains(.init(char: "\u{7F}")))                  // ⌘⌫ Trash
         #expect(keys.contains(.init(char: "\u{F700}")))                // ⌘↑ Parent
-        // S37 转正：⌘⇧T Reopen Closed Tab 需从终端拦截回 app
+        // S37 转正：⌘⇧T Reopen Closed Tab、⌘⇧P Command Palette 需从终端拦截回 app
         #expect(keys.contains(.init(char: "t", shift: true)))
-        // ⌘⇧P 仍为预留位（Command Palette，S37 #3 转正）
-        #expect(!keys.contains(.init(char: "p", shift: true)))
+        #expect(keys.contains(.init(char: "p", shift: true)))
     }
 
     /// 浮窗布局覆盖全部应展示分组，且每个展示条目都能落进某一列。

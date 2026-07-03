@@ -16,6 +16,8 @@ final class WorkspaceViewState {
     var isPreviewPaneVisible: Bool
     /// 长按 ⌘ 快捷键浮窗；瞬态，不持久化。
     var isShortcutOverlayVisible: Bool = false
+    /// Command Palette 显隐；瞬态，不持久化。经 WorkspaceController.show/dismiss 管理焦点还原。
+    var isCommandPaletteVisible: Bool = false
 
     init(mode: WorkspaceMode = .finderFirst,
          isTerminalVisible: Bool = false,

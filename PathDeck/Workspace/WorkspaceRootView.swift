@@ -113,6 +113,16 @@ struct WorkspaceRootView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: viewState.isShortcutOverlayVisible)
+        .overlay(alignment: .top) {
+            // Command Palette（⌘⇧P）：可交互浮层（纯 SwiftUI 瞬态，if 挂载无 NSView 生命周期问题）；
+            // 显隐与焦点还原由 WorkspaceController.show/dismissCommandPalette 管理。
+            if viewState.isCommandPaletteVisible {
+                CommandPaletteView(controller: controller)
+                    .padding(.top, 48)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: viewState.isCommandPaletteVisible)
         .focusedSceneValue(\.activeWorkspaceController, controller)
         .onAppear { controller.installShortcutMonitors() }
         .onDisappear { controller.removeShortcutMonitors() }

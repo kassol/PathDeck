@@ -122,6 +122,11 @@ enum ShortcutRegistry {
                      title: String(localized: "Toggle Terminal"),
                      group: .view, context: .global,
                      action: requiresController { $0.viewState.isTerminalVisible.toggle() }),
+        ShortcutSpec(id: "commandPalette", keys: ["⌘", "⇧", "P"],
+                     title: String(localized: "Command Palette…"),
+                     group: .view, context: .global,
+                     reservedInTerminal: [.init(char: "p", shift: true)],
+                     action: requiresController { $0.showCommandPalette() }),
         ShortcutSpec(id: "toggleHiddenFiles", keys: ["⌘", "⇧", "."],
                      title: String(localized: "Hidden Files"),
                      group: .view, context: .global,
@@ -293,12 +298,6 @@ enum ShortcutRegistry {
                      group: .system, context: .global,
                      showsInOverlay: false,
                      reservedInTerminal: [.init(char: "q")]),
-
-        // MARK: 预留键位（Reserved Shortcut）
-        ShortcutSpec(id: "reservedCommandPalette", keys: ["⌘", "⇧", "P"],
-                     title: "Command Palette",
-                     group: .system, context: .global,
-                     isReserved: true, showsInOverlay: false),
     ]
 
     /// 按 id 查找条目（菜单动作绑定入口）。
@@ -309,6 +308,14 @@ enum ShortcutRegistry {
     /// 浮窗展示的条目（预留位与系统级不显示）。
     static var overlaySpecs: [ShortcutSpec] {
         all.filter { $0.showsInOverlay && !$0.isReserved }
+    }
+
+    /// Command Palette 展示的命令（有 action 的非预留、非系统条目），按浮窗分组序排列。
+    static var paletteSpecs: [ShortcutSpec] {
+        let eligible = all.filter { $0.action != nil && !$0.isReserved && $0.group != .system }
+        return overlayColumns.flatMap { $0 }.flatMap { group in
+            eligible.filter { $0.group == group }
+        }
     }
 
     /// 浮窗三列布局：每列一到多个分组。

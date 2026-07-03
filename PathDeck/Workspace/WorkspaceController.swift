@@ -51,6 +51,7 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
     private var closeTabMonitor: Any?
     private var newTabMonitor: Any?
     private var reopenMonitor: Any?
+    private var paletteMonitor: Any?
     private var tabSwitchMonitor: Any?
     private var overlayMonitor: Any?
 
@@ -129,6 +130,15 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
             }
             return nil
         }
+        // ⌘⇧P Command Palette：同为 monitor（终端焦点下 SwiftUI keyboardShortcut 不派发）。
+        paletteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+                  event.charactersIgnoringModifiers?.lowercased() == "p",
+                  NSApp.keyWindow == self.window else { return event }
+            self.showCommandPalette()
+            return nil
+        }
         tabSwitchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, NSApp.keyWindow == self.window else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -156,6 +166,7 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
         if let m = closeTabMonitor { NSEvent.removeMonitor(m); closeTabMonitor = nil }
         if let m = newTabMonitor { NSEvent.removeMonitor(m); newTabMonitor = nil }
         if let m = reopenMonitor { NSEvent.removeMonitor(m); reopenMonitor = nil }
+        if let m = paletteMonitor { NSEvent.removeMonitor(m); paletteMonitor = nil }
         if let m = tabSwitchMonitor { NSEvent.removeMonitor(m); tabSwitchMonitor = nil }
         if let m = overlayMonitor { NSEvent.removeMonitor(m); overlayMonitor = nil }
         overlayTracker.reset()
@@ -291,6 +302,28 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
     func updateTerminalCwd(_ id: UUID, to url: URL) {
         store.updateCwd(id, to: url)
         manager?.persistSession()
+    }
+
+    // MARK: - Command Palette
+
+    /// Palette 关闭后要还的焦点（呼出时的 first responder）。
+    private weak var paletteReturnFocus: NSResponder?
+
+    /// 呼出 Command Palette（⌘⇧P）。已可见则 no-op。
+    func showCommandPalette() {
+        guard !viewState.isCommandPaletteVisible else { return }
+        paletteReturnFocus = window?.firstResponder
+        viewState.isCommandPaletteVisible = true
+    }
+
+    /// 关闭 Palette 并还焦点（Esc / 执行命令）。
+    func dismissCommandPalette() {
+        guard viewState.isCommandPaletteVisible else { return }
+        viewState.isCommandPaletteVisible = false
+        if let responder = paletteReturnFocus {
+            window?.makeFirstResponder(responder)
+        }
+        paletteReturnFocus = nil
     }
 
     // MARK: - Workspace commands（菜单 / Command Palette 经 ShortcutRegistry action 调用）

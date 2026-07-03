@@ -198,6 +198,15 @@ private struct FileCommands: Commands {
 private struct ViewCommands: Commands {
     var body: some Commands {
         CommandMenu("View") {
+            // ⌘⇧P 快捷键由 WorkspaceRootView 的 paletteMonitor 处理（终端焦点下
+            // SwiftUI keyboardShortcut 不派发），此处仅菜单显示与兜底。
+            Button("Command Palette…") {
+                runCommand("commandPalette")
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Divider()
+
             // Sidebar / Preview Pane 显隐是 per-window Session State（S36），
             // 严格 key workspace；Settings 为 key 时 no-op。
             Button("Toggle Sidebar") {
