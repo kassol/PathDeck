@@ -21,13 +21,25 @@ struct ShortcutCommandTests {
         )
     }
 
-    /// 除 system 组与参数化条目（⌘1–9 由菜单/monitor 自行展开）外，
-    /// 所有生效条目必须挂 action——Palette 内容完全派生自本表。
+    /// 除 system 组外，所有生效条目必须挂 action 或 indexedAction（⌘1–9 参数化，S38）
+    /// ——Palette 内容完全派生自本表，键驱动行为不得住在表外。
     @Test
     func allActiveSpecsHaveActions() {
         for spec in ShortcutRegistry.all
-        where !spec.isReserved && spec.group != .system && spec.id != "selectTabN" {
-            #expect(spec.action != nil, "缺 action: \(spec.id)")
+        where !spec.isReserved && spec.group != .system {
+            #expect(spec.action != nil || spec.indexedAction != nil, "缺 action: \(spec.id)")
+        }
+    }
+
+    /// indexedAction 与 action 互斥；当前仅 selectTabN 参数化。
+    @Test
+    func indexedActionExclusivity() {
+        for spec in ShortcutRegistry.all {
+            #expect(spec.action == nil || spec.indexedAction == nil,
+                    "\(spec.id) 不得同时挂 action 与 indexedAction")
+            if spec.indexedAction != nil {
+                #expect(spec.id == "selectTabN")
+            }
         }
     }
 

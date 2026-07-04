@@ -7,7 +7,7 @@ import AppKit
 @MainActor
 struct CommandPaletteFilterTests {
     private func spec(_ id: String, _ title: String, group: ShortcutGroup = .files) -> ShortcutSpec {
-        ShortcutSpec(id: id, keys: ["⌘", "X"], title: title, group: group,
+        ShortcutSpec(id: id, match: .char("x", [.command]), title: title, group: group,
                      context: .global, action: { _ in })
     }
 
