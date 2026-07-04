@@ -49,7 +49,8 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 ```
 PathDeck/                  App 源码
 PathDeck/PathDeckApp.swift @main（Settings scene 唯一 SwiftUI scene + 五组 CommandMenu）；workspace window 完全由 `AppDelegate` 经 AppKit 自管
-PathDeck/ShortcutRegistry.swift  全部快捷键与命令元数据唯一真相源（键位/标题/分组/焦点语境/预留位/终端拦截派生；S37 起升级为命令表：每条含 action + isEnabled），菜单动作统一经 `runCommand(id)` 调本表 action，浮窗、Command Palette 与 `appReservedShortcuts` 完全派生；改键位/动作先改这里
+PathDeck/ShortcutRegistry.swift  全部快捷键与命令元数据唯一真相源（S37 命令表：action/isEnabled；S38 键位单源：`KeyMatch` 机器 matcher + `dispatchVia`/`targetPolicy`/`indexedAction`），键帽 token、菜单键位、浮窗、Command Palette、`appReservedShortcuts` 终端拦截全部派生；改键位/动作只改这里
+PathDeck/CommandDispatch.swift   Command Dispatch（命令派发，S38/ADR-0002）：`resolve(stroke, focus, target)` 纯决策函数——R1 仲裁（语境精确>global>跨语境，首个 enabled 胜出，全不可用放行）、textEditing 一律放行、非 workspace keyWindow 仅 allowsFallback；执行侧全局唯一 monitor adapter 在 `WorkspaceManager.installCommandMonitor`
 PathDeck/AppDelegate.swift NSApplicationDelegate：启动构造 `WorkspaceManager` + `restoreSession` + `NSWindow.allowsAutomaticWindowTabbing = false`；kAEGetURL 拦截 URL Scheme + `application(_:open:)` Open With + Services 注册；`AppRouter.pending` FIFO 队列由 `drainPendingRoutes` 循环消费（命中 cwd 已有 window 激活，否则新建合入；`withObservationTracking` 注册后续 observation）
 PathDeck/Workspace/        Workspace 模块（NSWindow tabbing 接管 + per-window 状态拆分），见其 AGENTS.md
 PathDeck/SidebarView.swift Sidebar（统一 Favorites 区块，`List.onMove` 手动重排）+ PinnedFolders bookmark 持久化（首次启动 seed 默认五项，删空不恢复）
@@ -102,8 +103,9 @@ xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -configuration Debug bui
 # 测试（全量，含会拉起 GUI 的 UITests）
 xcodebuild -project PathDeck.xcodeproj -scheme PathDeck test
 # 仅单元测试（跳过 UITests，纯逻辑验证用这个）
-# 注：本机 macOS 26.5 实测 `-destination 'platform=macOS,arch=arm64'` 单独不足以绕过 Developer Mode 关闭时的 LaunchServices 报错（"Could not launch PathDeckTests"），需先 sudo /usr/sbin/DevToolsSecurity -enable 一次开机器全局 Developer Mode，或直接在 Xcode 内 ⌘U
-xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -only-testing:PathDeckTests -destination 'platform=macOS,arch=arm64' test
+# 注 1：本机 macOS 26.5 实测 `-destination 'platform=macOS,arch=arm64'` 单独不足以绕过 Developer Mode 关闭时的 LaunchServices 报错（"Could not launch PathDeckTests"），需先 sudo /usr/sbin/DevToolsSecurity -enable 一次开机器全局 Developer Mode，或直接在 Xcode 内 ⌘U
+# 注 2：必须 `-parallel-testing-enabled NO`——并行 test worker 各自拉起 test host，与 app 单实例约束冲突，同报 IDELaunchErrorDomain Code=20（log 取证特征 "LAUNCHING: … is already running"）；跑前确认无运行中的 PathDeck 实例
+xcodebuild -project PathDeck.xcodeproj -scheme PathDeck -only-testing:PathDeckTests -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO test
 # 打开工程
 open PathDeck.xcodeproj
 ```
@@ -189,6 +191,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-07-04 **S38 Command Dispatch 收拢**（架构评审首推候选，ADR-0002）：键位三处分写（registry 展示 / 6 个 per-window monitor 内联匹配 / 菜单字面量）收敛为单源单路径。`ShortcutSpec` 增 `match: KeyMatch`（char/keyCode/digit-range + 修饰集，键帽/菜单键位/终端拦截全派生）+ `dispatchVia`（monitor/menuOnly/viewLocal）+ `targetPolicy`（workspaceStrict/allowsFallback）+ `indexedAction`（⌘1–9 行为进表，原 monitor 与菜单各一份）。新增 `CommandDispatch.resolve` 纯决策函数（R1 仲裁：语境精确>global>跨语境、首个 enabled 胜出、全不可用放行；textEditing 一律放行——重命名中 ⌘⌫ 不得移废纸篓；非 workspace keyWindow 仅 allowsFallback 执行）。`WorkspaceManager.installCommandMonitor` 全局唯一 monitor adapter（AppDelegate 启动装载），删 `WorkspaceController` 5 个键位 monitor（浮窗 hold-tracker 保留）。行为变化：⌘⇧T 终端栈空回退重开窗口（原吞键 no-op）；⌘↑ Go to Parent 获得实际绑定（原仅浮窗展示无派发路径）。测试 +17（resolve 矩阵 11 + adapter 合成 NSEvent 6，含 S32 ⌘T 回归）；全量 309。本地跑单测须 `-parallel-testing-enabled NO`（见常用命令注 2）。详见 `docs/plans/2026-07-04-s38-command-dispatch.md`。
 - 2026-07-03 **S37 预留位转正：Command Palette + Reopen Closed Tab**（GitHub #1/#2/#3）：`ShortcutRegistry` 升级为命令表（每条 `action: (WorkspaceController?) -> Void` + `isEnabled` 谓词；workspace 型经 `requiresController` 收 nil no-op，responder-chain 型封装 `sendAction`，全局偏好型不依赖 controller），PathDeckApp 菜单动作一次到位改经 `runCommand(id)` 派发；Rename Workspace / Send Path 逻辑迁入 `WorkspaceController`，`WorkspaceModel.openSelection()` 新增。⌘⇧T 双语义对称 ⌘W：`CloseHistoryStack`（@Observable 泛型，LIFO 上限 10、仅进程内）终端栈挂 controller、窗口栈挂 manager；仅用户关闭手势入栈（engine exit 回调传 `recordHistory: false`）；重开按快照重建（终端恢复 cwd/标题/位置，窗口走 `restoreController` 恢复布局+终端组，原 tab 组存活即归位）——组关系必须用存活期缓存 `lastKnownTabGroup`（becomeKey/resignKey + 程序化 addTabbedWindow 后显式刷新），`windowWillClose` 时窗口已脱组取不到。⌘⇧P Command Palette：窗口内可交互 overlay（`CommandPaletteView` + `CommandPaletteFilter` subsequence fuzzy 纯函数），内容派生自 `paletteSpecs`，不可用置灰（↑↓ 跳过/↩ 无效），show/dismiss 经 controller 记录并还原 first responder。窗口类测试注意：Swift Testing 默认并行 + 非活跃 app 下 key 事件不可靠 → `@Suite(.serialized)` + 不依赖 becomeKey 的显式钩子。详见 `docs/plans/2026-07-03-s37-command-palette-reopen.md`。
 - 2026-07-03 **S36 快捷键收束 + 长按 ⌘ 浮窗 + 键位对齐**：新建 `ShortcutRegistry`（快捷键元数据唯一真相源），`GhosttySurfaceView.appReservedShortcuts` 与快捷键浮窗内容改为派生，单测守护查重。键位全面对照业界惯例调整：⌘B 切换 Sidebar（新增）、⌘⇧B 接替 ⌘⇧P 切换 Preview Pane、⌘↩ 接替 ⌘⇧T Send Path、⌃⇧` 接替 ⌃⇧N New Terminal、⌘↓ 打开选中项（新增，与双击同路径）；⌘⇧P/⌘⇧T 留作预留位（命令面板 / 重开 tab）。长按 ⌘ 800ms 显示快捷键浮窗（`ShortcutOverlayHoldTracker` 纯状态机 + per-window 观察型 NSEvent monitor + SwiftUI overlay，阈值内按键/鼠标取消，⌘+点击多选不受影响）。Sidebar/Preview Pane 显隐从全局偏好迁为 per-window Session State（旧快照兼容，旧全局值作新窗口默认）。Return 重命名语义加纯键守卫并立 ADR（`docs/adr/0001`）。详见 `docs/plans/2026-07-03-s36-shortcut-overhaul.md`。
 - 2026-07-02 **重启持久化补全（窗口 frame / 列宽 / 排序指示器）**：窗口 frame 进 session 快照（`WorkspaceGroupState.frame`，每 tab 组一个；越界回退默认居中），新独立窗口继承最近活跃窗口 frame + 级联偏移；列宽进全局偏好（`WorkspacePreferences.columnWidths`，不用 NSTableView autosaveName——写死 standard defaults 测试无法隔离）；排序列头指示箭头改按持久化排序初始化（原硬编码 name↑）。顺带修复既有 bug：`window.contentViewController = NSHostingController(...)` 赋值会把窗口 resize 到 SwiftUI fitting size（720×480），吞掉 contentRect——init 赋值后重新 setFrame。另修列宽还原 bug（`autoresizesOutlineColumn = false`，见 FileWorkspace/AGENTS.md）。首建根 `CONTEXT.md`（Preference vs Session State 术语边界）。

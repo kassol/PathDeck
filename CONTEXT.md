@@ -37,6 +37,12 @@ _Avoid_: 右侧边栏、Inspector
 一条可被用户触达的动作，键位、标题、焦点语境、可用条件全局唯一定义；菜单、快捷键、Command Palette 是同一命令的三种入口。
 _Avoid_: 动作、操作（泛指手势时可用，指这一概念时统一用 Command）
 
+**Command Dispatch（命令派发）**:
+keystroke 到 Command 的唯一决策路径：全局 monitor 捕键，按命令表（键位 matcher、焦点语境、
+可用条件、目标 policy）仲裁出应执行的 Command 或放行。键位只在命令表存一份，菜单显示、
+浮窗、终端拦截皆派生。
+_Avoid_: 快捷键处理、按键路由
+
 **Command Palette（命令面板）**:
 ⌘⇧P 呼出的窗口内命令搜索浮层：全量命令可搜、不可用置灰，模糊匹配、回车执行，作用于所在窗口。
 _Avoid_: 命令中心、快速操作
