@@ -43,16 +43,13 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
         manager?.applySort(column: column, ascending: ascending)
     }
 
-    // MARK: - Shortcut monitors (terminal-focus aware + tab switching)
+    // MARK: - Shortcut overlay monitor
     //
-    // monitor token 由 controller 持有：view 重复 appear / view tree 重构都不会泄漏，windowWillClose
-    // 兜底 onDisappear 不可靠的场景。安装/拆除幂等。
+    // keystroke → 命令派发自 S38 起由全局唯一 monitor（WorkspaceManager.installCommandMonitor
+    // → CommandDispatch）承担，本控制器只剩长按 ⌘ 浮窗的观察型 monitor（flagsChanged 状态机，
+    // 无键位匹配）。monitor token 由 controller 持有：view 重复 appear / view tree 重构都不会
+    // 泄漏，windowWillClose 兜底 onDisappear 不可靠的场景。安装/拆除幂等。
 
-    private var closeTabMonitor: Any?
-    private var newTabMonitor: Any?
-    private var reopenMonitor: Any?
-    private var paletteMonitor: Any?
-    private var tabSwitchMonitor: Any?
     private var overlayMonitor: Any?
 
     /// 长按 ⌘ 浮窗状态机；可见性经回调写入 viewState 驱动 SwiftUI overlay。
@@ -86,88 +83,9 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
             }
             return event
         }
-        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.charactersIgnoringModifiers == "w",
-                  NSApp.keyWindow == self.window else { return event }
-            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView,
-               let sessionID = self.viewState.activeTerminalID {
-                self.closeTerminal(sessionID)
-                return nil
-            }
-            return event
-        }
-        newTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.charactersIgnoringModifiers == "t",
-                  NSApp.keyWindow == self.window else { return event }
-            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView {
-                self.createTerminal()
-                return nil
-            }
-            // 焦点不在终端（文件列表等）：开新 workspace 窗口 tab。不能 return event 依赖 SwiftUI
-            // .keyboardShortcut("t")——手动 NSWindow + 无 WindowGroup 架构下，first responder 为纯
-            // AppKit NSView（FileNSOutlineView）时该 command 不派发，Cmd+T 会落空（同 Next/Prev/
-            // Cmd+1..9 已知问题，故一并走 monitor）。keyWindow 非 workspace 时上面 guard 已 return
-            // event，仍由 SwiftUI keyboardShortcut 兜底（Settings 焦点退到 lastActive 开新 tab）。
-            self.manager?.openNewWindow(cwd: self.workspace.currentURL, tabbedTo: self.window)
-            return nil
-        }
-        // ⌘⇧T 双语义对称 ⌘W：终端焦点 → 重开终端 session，否则 → 重开 workspace 窗口。
-        // 与 ⌘T 同理走 monitor（AppKit first responder 下 SwiftUI keyboardShortcut 不派发）；
-        // 栈空 no-op 但仍吞事件（菜单兜底走同一 action，不会二次触发）。
-        reopenMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-                  event.charactersIgnoringModifiers?.lowercased() == "t",
-                  NSApp.keyWindow == self.window else { return event }
-            if NSApp.keyWindow?.firstResponder is GhosttySurfaceView {
-                self.reopenClosedTerminal()
-            } else {
-                self.manager?.reopenClosedWindow()
-            }
-            return nil
-        }
-        // ⌘⇧P Command Palette：同为 monitor（终端焦点下 SwiftUI keyboardShortcut 不派发）。
-        paletteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-                  event.charactersIgnoringModifiers?.lowercased() == "p",
-                  NSApp.keyWindow == self.window else { return event }
-            self.showCommandPalette()
-            return nil
-        }
-        tabSwitchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, NSApp.keyWindow == self.window else { return event }
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let chars = event.charactersIgnoringModifiers ?? ""
-            if flags == .command, let n = Int(chars), (1...9).contains(n) {
-                if let tabs = self.window?.tabbedWindows, tabs.indices.contains(n - 1) {
-                    tabs[n - 1].makeKeyAndOrderFront(nil)
-                    return nil
-                }
-                return event
-            }
-            if flags == .control && event.keyCode == 48 {
-                self.window?.selectNextTab(nil)
-                return nil
-            }
-            if flags == [.control, .shift] && event.keyCode == 48 {
-                self.window?.selectPreviousTab(nil)
-                return nil
-            }
-            return event
-        }
     }
 
     func removeShortcutMonitors() {
-        if let m = closeTabMonitor { NSEvent.removeMonitor(m); closeTabMonitor = nil }
-        if let m = newTabMonitor { NSEvent.removeMonitor(m); newTabMonitor = nil }
-        if let m = reopenMonitor { NSEvent.removeMonitor(m); reopenMonitor = nil }
-        if let m = paletteMonitor { NSEvent.removeMonitor(m); paletteMonitor = nil }
-        if let m = tabSwitchMonitor { NSEvent.removeMonitor(m); tabSwitchMonitor = nil }
         if let m = overlayMonitor { NSEvent.removeMonitor(m); overlayMonitor = nil }
         overlayTracker.reset()
     }

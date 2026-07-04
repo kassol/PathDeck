@@ -42,6 +42,44 @@ private func runCommand(_ id: String) {
     ShortcutRegistry.spec(id)?.action?(keyWorkspaceController())
 }
 
+/// 参数化命令（⌘1–9）菜单入口：行为同样住在命令表（indexedAction）。
+@MainActor
+private func runIndexedCommand(_ id: String, _ n: Int) {
+    ShortcutRegistry.spec(id)?.indexedAction?(keyWorkspaceController(), n)
+}
+
+/// 菜单键位从命令表 match 派生（S38）——仅作菜单显示与非 workspace keyWindow 时的
+/// 菜单兜底；workspace window 为 key 时全局 monitor（CommandDispatch）已先吞对应事件。
+/// 参数化条目（⌘1–9）返回 nil（menu item 仅显示文字）。
+@MainActor
+private func menuShortcut(_ id: String) -> KeyboardShortcut? {
+    guard let match = ShortcutRegistry.spec(id)?.match else { return nil }
+    var mods: EventModifiers = []
+    if match.modifiers.contains(.command) { mods.insert(.command) }
+    if match.modifiers.contains(.shift) { mods.insert(.shift) }
+    if match.modifiers.contains(.option) { mods.insert(.option) }
+    if match.modifiers.contains(.control) { mods.insert(.control) }
+    switch match {
+    case .digits:
+        return nil
+    case .keyCode(let code, _):
+        switch code {
+        case 48: return KeyboardShortcut(.tab, modifiers: mods)
+        case 50: return KeyboardShortcut("`", modifiers: mods)
+        default: return nil
+        }
+    case .char(let ch, _):
+        switch ch {
+        case "\r": return KeyboardShortcut(.return, modifiers: mods)
+        case "\u{7F}": return KeyboardShortcut(.delete, modifiers: mods)
+        case "\u{F700}": return KeyboardShortcut(.upArrow, modifiers: mods)
+        case "\u{F701}": return KeyboardShortcut(.downArrow, modifiers: mods)
+        case " ": return KeyboardShortcut(.space, modifiers: mods)
+        default: return KeyboardShortcut(KeyEquivalent(ch), modifiers: mods)
+        }
+    }
+}
+
 // MARK: - CLI
 
 private struct CLICommands: Commands {
@@ -59,27 +97,26 @@ private struct CLICommands: Commands {
 private struct TabCommands: Commands {
     var body: some Commands {
         CommandMenu("Tabs") {
-            // Cmd+T 实际由 WorkspaceRootView 的 newTabMonitor 接管（终端焦点 → 新终端 session，
-            // 文件焦点 → 新 workspace tab）；此处 action + keyboardShortcut 仅用于菜单显示 ⌘T，以及
-            // Settings/alert 为 key 时的兜底（monitor 严格 keyWindow，那时 return event 放行给本 action）。
+            // ⌘T 实际由全局 CommandDispatch monitor 按焦点语境分流（终端焦点 → 新终端
+            // session，文件焦点 → 新 workspace tab）；此处 keyboardShortcut 仅菜单显示，
+            // 与 Settings/alert 为 key 时经 targetPolicy 放行后的菜单兜底。
             Button("New Tab") {
                 runCommand("newTab")
             }
-            .keyboardShortcut("t")
+            .keyboardShortcut(menuShortcut("newTab"))
 
-            // ⌘⇧T 快捷键由 WorkspaceRootView 的 reopenMonitor 双语义分流（终端焦点 → 重开终端），
-            // 此处 action + keyboardShortcut 仅用于菜单显示与 Settings 为 key 时的兜底（同 New Tab
-            // 模式：窗口语义 + 全局兜底，不加 disabled——FocusedValue 在 Settings 下为 nil，
-            // disabled 会让兜底失效；空栈点击 no-op 与 Next/Previous Tab 一致）。
+            // ⌘⇧T 同为 CommandDispatch 双语义分流（终端焦点 → 重开终端）；此处仅显示与兜底
+            // （不加 disabled——FocusedValue 在 Settings 下为 nil，disabled 会让兜底失效；
+            // 空栈点击 no-op 与 Next/Previous Tab 一致）。
             Button("Reopen Closed Tab") {
                 runCommand("reopenClosedWindow")
             }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .keyboardShortcut(menuShortcut("reopenClosedWindow"))
 
             Divider()
 
-            // Next/Previous Tab 的快捷键由 WorkspaceRootView 的 NSEvent monitor 处理（严格 keyWindow），
-            // 此处仅保留 menu item 文字（带兜底点击响应），不绑 SwiftUI keyboardShortcut。
+            // Next/Previous Tab 的快捷键（⌃⇥/⌃⇧⇥）由 CommandDispatch 严格 key workspace
+            // 派发，此处仅保留 menu item 文字（带兜底点击响应），不绑 SwiftUI keyboardShortcut。
             Button("Next Tab") {
                 runCommand("nextTab")
             }
@@ -92,26 +129,19 @@ private struct TabCommands: Commands {
             Button("Rename Workspace…") {
                 runCommand("renameWorkspace")
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .keyboardShortcut(menuShortcut("renameWorkspace"))
 
             Divider()
 
-            // 1..9 menu items 仅显示，不绑 SwiftUI keyboardShortcut；快捷键由 WorkspaceRootView
-            // 的 NSEvent local monitor 显式拦截、严格针对 keyWindow workspace（避免 Settings 为 key
-            // 时通过 fallback 操作后台 workspace）。参数化条目，不走命令表 action。
+            // 1..9 menu items 仅显示，不绑 SwiftUI keyboardShortcut；快捷键由 CommandDispatch
+            // 严格针对 keyWindow workspace 派发（避免 Settings 为 key 时操作后台 workspace）。
+            // 点击行为同样来自命令表 indexedAction。
             ForEach(1...9, id: \.self) { n in
                 Button("Tab \(n)") {
-                    selectTab(at: n - 1)
+                    runIndexedCommand("selectTabN", n)
                 }
             }
         }
-    }
-
-    @MainActor
-    private func selectTab(at index: Int) {
-        guard let tabs = keyWorkspaceController()?.window?.tabbedWindows,
-              tabs.indices.contains(index) else { return }
-        tabs[index].makeKeyAndOrderFront(nil)
     }
 }
 
@@ -125,17 +155,17 @@ private struct TerminalCommands: Commands {
             Button("Toggle Terminal") {
                 runCommand("toggleTerminal")
             }
-            .keyboardShortcut("`", modifiers: .control)
+            .keyboardShortcut(menuShortcut("toggleTerminal"))
 
             Button("New Terminal") {
                 runCommand("newTerminal")
             }
-            .keyboardShortcut("`", modifiers: [.control, .shift])
+            .keyboardShortcut(menuShortcut("newTerminal"))
 
             Button("Send Path to Terminal") {
                 runCommand("sendPathToTerminal")
             }
-            .keyboardShortcut(.return, modifiers: .command)
+            .keyboardShortcut(menuShortcut("sendPathToTerminal"))
             .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
         }
     }
@@ -151,7 +181,7 @@ private struct FileCommands: Commands {
             Button("Open Folder…") {
                 runCommand("openFolder")
             }
-            .keyboardShortcut("o")
+            .keyboardShortcut(menuShortcut("openFolder"))
 
             Menu("Open Recent Folder") {
                 let recent = RecentFolders.shared.items
@@ -175,13 +205,13 @@ private struct FileCommands: Commands {
             Button("New Folder") {
                 runCommand("newFolder")
             }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
+            .keyboardShortcut(menuShortcut("newFolder"))
         }
         CommandMenu("File Actions") {
             Button("Move to Trash") {
                 runCommand("moveToTrash")
             }
-            .keyboardShortcut(.delete, modifiers: .command)
+            .keyboardShortcut(menuShortcut("moveToTrash"))
             .disabled(focused?.workspace.selectedURLs.isEmpty ?? true)
         }
     }
@@ -196,12 +226,10 @@ private struct FileCommands: Commands {
 private struct ViewCommands: Commands {
     var body: some Commands {
         CommandMenu("View") {
-            // ⌘⇧P 快捷键由 WorkspaceRootView 的 paletteMonitor 处理（终端焦点下
-            // SwiftUI keyboardShortcut 不派发），此处仅菜单显示与兜底。
             Button("Command Palette…") {
                 runCommand("commandPalette")
             }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .keyboardShortcut(menuShortcut("commandPalette"))
 
             Divider()
 
@@ -210,60 +238,60 @@ private struct ViewCommands: Commands {
             Button("Toggle Sidebar") {
                 runCommand("toggleSidebar")
             }
-            .keyboardShortcut("b")
+            .keyboardShortcut(menuShortcut("toggleSidebar"))
 
             Button("Toggle Preview Pane") {
                 runCommand("togglePreviewPane")
             }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .keyboardShortcut(menuShortcut("togglePreviewPane"))
 
             Button(LocalizedStringKey(WorkspacePreferences.shared.showHidden ? "Hide Hidden Files" : "Show Hidden Files")) {
                 runCommand("toggleHiddenFiles")
             }
-            .keyboardShortcut(".", modifiers: [.command, .shift])
+            .keyboardShortcut(menuShortcut("toggleHiddenFiles"))
         }
         CommandGroup(replacing: .textEditing) {
             Button("Find…") {
                 runCommand("find")
             }
-            .keyboardShortcut("f")
+            .keyboardShortcut(menuShortcut("find"))
         }
         CommandGroup(replacing: .pasteboard) {
             Button("Copy") {
                 runCommand("copy")
             }
-            .keyboardShortcut("c")
+            .keyboardShortcut(menuShortcut("copy"))
 
             Button("Paste") {
                 runCommand("paste")
             }
-            .keyboardShortcut("v")
+            .keyboardShortcut(menuShortcut("paste"))
 
             Button("Move Item Here") {
                 runCommand("moveItemHere")
             }
-            .keyboardShortcut("v", modifiers: [.command, .option])
+            .keyboardShortcut(menuShortcut("moveItemHere"))
 
             Divider()
 
             Button("Duplicate") {
                 runCommand("duplicate")
             }
-            .keyboardShortcut("d")
+            .keyboardShortcut(menuShortcut("duplicate"))
 
             Divider()
 
             Button("Select All") {
                 runCommand("selectAll")
             }
-            .keyboardShortcut("a")
+            .keyboardShortcut(menuShortcut("selectAll"))
 
             Divider()
 
             Button("Copy Current Path") {
                 runCommand("copyCurrentPath")
             }
-            .keyboardShortcut("c", modifiers: [.command, .option])
+            .keyboardShortcut(menuShortcut("copyCurrentPath"))
         }
     }
 }

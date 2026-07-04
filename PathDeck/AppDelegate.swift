@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let manager = WorkspaceManager()
         workspaceManager = manager
+        // 全局唯一 keystroke monitor（S38）：keystroke → CommandDispatch → 命令表。
+        manager.installCommandMonitor()
         manager.restoreSession()
 
         // 先同步 drain 启动前累积的 pending 队列（kAEGetURL / application(_:open:) 都在 didFinishLaunching 之前触发；

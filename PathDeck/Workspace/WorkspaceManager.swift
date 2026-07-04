@@ -231,6 +231,61 @@ final class WorkspaceManager {
         }
     }
 
+    // MARK: - Command dispatch（S38，全局唯一 keystroke monitor adapter）
+
+    private var commandMonitor: Any?
+
+    /// 安装全局命令 monitor（AppDelegate 启动时调一次；测试不装 monitor，
+    /// 直接调 `dispatchCommand` 喂合成事件）。
+    func installCommandMonitor() {
+        guard commandMonitor == nil else { return }
+        commandMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.dispatchCommand(for: event) ?? event
+        }
+    }
+
+    func removeCommandMonitor() {
+        if let m = commandMonitor {
+            NSEvent.removeMonitor(m)
+            commandMonitor = nil
+        }
+    }
+
+    /// 薄 adapter：NSEvent → KeyStroke + 派发语境 → `CommandDispatch.resolve` → 执行。
+    /// 返回 nil = 吞事件（已执行）；返回 event = 放行（终端 first responder /
+    /// 菜单 / 系统兜底）。`context` 为测试缝：nil 时从 NSApp.keyWindow 实算。
+    func dispatchCommand(
+        for event: NSEvent,
+        context: (target: WorkspaceController?, focus: CommandDispatch.Focus?)? = nil
+    ) -> NSEvent? {
+        let stroke = CommandDispatch.KeyStroke(event: event)
+        // monitor 表内命令均带 ⌘/⌃ 修饰（裸键一律 viewLocal），无修饰按键快速放行。
+        guard !stroke.modifiers.isDisjoint(with: [.command, .control]) else { return event }
+        let (target, focus) = context ?? dispatchContext()
+        guard let resolution = CommandDispatch.resolve(stroke, focus: focus, target: target) else {
+            return event
+        }
+        if let index = resolution.index {
+            resolution.spec.indexedAction?(target, index)
+        } else {
+            resolution.spec.action?(target)
+        }
+        return nil
+    }
+
+    /// 派发目标与焦点语境：keyWindow 是 workspace window → (controller, 语境)；
+    /// Settings / alert / 面板为 key → (nil, nil)，只有 allowsFallback 命令会执行。
+    private func dispatchContext() -> (WorkspaceController?, CommandDispatch.Focus?) {
+        guard let controller = NSApp.keyWindow?.windowController as? WorkspaceController else {
+            return (nil, nil)
+        }
+        let responder = NSApp.keyWindow?.firstResponder
+        if responder is GhosttySurfaceView { return (controller, .terminal) }
+        // NSText 覆盖 field editor（inline rename / 搜索框 / Palette 输入框）。
+        if responder is NSText { return (controller, .textEditing) }
+        return (controller, .file)
+    }
+
     // MARK: - Persistence
 
     func persistSession() {
