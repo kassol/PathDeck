@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let manager = WorkspaceManager()
         workspaceManager = manager
+        // 全局兜底命令取 manager 的唯一注册点（NSApp.delegate 是 SwiftUI 转发 delegate，
+        // cast 不回 AppDelegate）。
+        WorkspaceManager.appShared = manager
         // 全局唯一 keystroke monitor（S38）：keystroke → CommandDispatch → 命令表。
         manager.installCommandMonitor()
         manager.restoreSession()

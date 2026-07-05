@@ -34,10 +34,13 @@ runCommand / runIndexedCommand——monitor 型命令的键盘触发菜单执行
 回归测试 `CommandTSingleFireTests`：真事件 nextEvent→sendEvent 泵 + 派发遥测
 （`CommandDispatchTelemetry` 测试缝）断言单发 + 守卫规则矩阵。详见 ADR-0002 补充。
 
-顺带发现的既有隐患（未修，另行处理）：`NSApp.delegate as? AppDelegate` 在运行中为
+顺带发现并已修复的既有隐患（同日）：`NSApp.delegate as? AppDelegate` 在运行中为
 nil（SwiftUI @NSApplicationDelegateAdaptor 装的是转发 delegate），`fallbackManager(nil)`
 的兜底分支恒 nil——Settings 为 key 时 allowsFallback 命令（⌘⇧. / ⌘T / ⌘⇧T）实际
-no-op，且 S37 菜单兜底时代即如此，非 S38 引入。
+no-op，S37 菜单兜底时代即如此，非 S38 引入。修复：`WorkspaceManager.appShared`
+（static weak，AppDelegate 启动唯一注册点）替换 delegate cast；顺带删除同模式的
+孤儿 helper `PathDeckApp.workspaceManager()`（无调用方）。回归测试
+`ShortcutCommandTests.fallbackCommandsReachAppSharedManagerWithoutController`。
 
 ## 验证
 

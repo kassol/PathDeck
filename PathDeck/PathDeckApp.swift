@@ -30,11 +30,6 @@ private func keyWorkspaceController() -> WorkspaceController? {
     NSApp.keyWindow?.windowController as? WorkspaceController
 }
 
-@MainActor
-private func workspaceManager() -> WorkspaceManager? {
-    (NSApp.delegate as? AppDelegate)?.workspaceManager
-}
-
 /// 菜单命令统一入口：动作定义在 ShortcutRegistry 命令表（S37）。controller 解析仍严格
 /// keyWindow；workspace 型命令收到 nil 时由命令表 no-op，responder-chain / 全局偏好型照常执行。
 /// monitor 型命令的键盘触发经 menuShouldRun 跳过（同一 sendEvent 内 monitor 已执行，

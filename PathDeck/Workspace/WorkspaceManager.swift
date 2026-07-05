@@ -5,6 +5,12 @@ import Foundation
 /// 跨 window 路由查询（AppRouter）的入口。
 @MainActor
 final class WorkspaceManager {
+    /// app 级 manager 引用，AppDelegate 启动时赋值。运行时 NSApp.delegate 是 SwiftUI
+    /// @NSApplicationDelegateAdaptor 的转发 delegate（cast 回 AppDelegate 恒 nil，
+    /// 2026-07-05 实测），全局兜底命令（targetPolicy.allowsFallback）经此取 manager；
+    /// 测试各自构造独立 manager，不写本引用（用后须还原）。
+    static weak var appShared: WorkspaceManager?
+
     private(set) var controllers: [WorkspaceController] = []
 
     /// 最近一次成为 key 的 workspace controller 标识。Settings / alert 抢走 key window 时仍能定位

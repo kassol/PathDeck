@@ -190,7 +190,8 @@ private func sendsResponderAction(_ selectorName: String) -> @MainActor (Workspa
 }
 
 private func fallbackManager(_ c: WorkspaceController?) -> WorkspaceManager? {
-    c?.manager ?? (NSApp.delegate as? AppDelegate)?.workspaceManager
+    // 不走 NSApp.delegate：SwiftUI adaptor 在其上装的是转发 delegate，cast 恒 nil。
+    c?.manager ?? WorkspaceManager.appShared
 }
 
 /// New Terminal / New Terminal Tab 共用：建 session 并确保终端面板可见。
