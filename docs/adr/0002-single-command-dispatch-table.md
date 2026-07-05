@@ -38,6 +38,14 @@ monitor 内联匹配、菜单字面量）、目标 Workspace 解析三套语义�
 
 ## Consequences
 
+- **（2026-07-05 补充，⌘T 双开回归实测）local monitor 返回 nil 只拦截事件向
+  window/responder 的继续派发，拦不住同一次 `sendEvent` 内的菜单 key-equivalent
+  处理**（判别实验：只 dequeue 不 sendEvent 时 monitor 零触发且事件原样返回——
+  monitor 挂在 sendEvent 内部；带 sendEvent 时 monitor 与菜单各执行一次）。因此
+  monitor 型命令的菜单执行必须经 `CommandDispatch.menuShouldRun` 守卫：键盘触发
+  （`NSApp.currentEvent` 为 keyDown）一律跳过，鼠标点击照常。S38 之前不双开是因为
+  per-window monitor 场景下 SwiftUI 菜单派发本来就死（S32 已知），并非 nil 抑制成立。
+
 - 改键位 / 加命令只改 `ShortcutRegistry`；monitor、菜单、浮窗、Palette、终端拦截自动跟随。
 - 派发决策可测：`CommandDispatchTests` 矩阵（键 × 焦点 × enabled）+
   `CommandMonitorAdapterTests` 合成 NSEvent（含 S32 回归）。

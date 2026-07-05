@@ -4,6 +4,19 @@ import AppKit
 /// `resolve` 是纯决策函数——按键、焦点语境、目标 controller 进，命中命令（含 ⌘1–9
 /// 参数）或 nil（放行给系统/菜单）出；执行由全局 monitor adapter
 /// （`WorkspaceManager.installCommandMonitor`）完成，仅一行 action 调用。
+/// 派发遥测（测试缝）：记录一次按键在真实事件管线中实际执行的路径次数。
+/// ⌘T 双开回归（2026-07-05）的管线级测试靠它观测「monitor + 菜单合计恰好执行一次」，
+/// keyWindow 在 xcodebuild 会话不可得，无法用窗口数作信号。运行时开销为两次计数写入。
+@MainActor
+enum CommandDispatchTelemetry {
+    static var monitorDispatchCount = 0
+    static var menuRunIDs: [String] = []
+    static func reset() {
+        monitorDispatchCount = 0
+        menuRunIDs = []
+    }
+}
+
 @MainActor
 enum CommandDispatch {
 
@@ -93,6 +106,16 @@ enum CommandDispatch {
                   range.contains(n) else { return .none }
             return .some(n)
         }
+    }
+
+    /// 菜单 action 入口守卫（⌘T 双开回归修复，2026-07-05）：local monitor 返回 nil
+    /// 只拦截事件向 window/responder 的继续派发，拦不住同一次 sendEvent 内的菜单
+    /// key-equivalent 处理（实测：探针显示一次 ⌘T 令 monitor 与菜单各执行一次）。
+    /// monitor 型命令的键盘触发菜单执行必然与全局 monitor 重复——monitor 放行的
+    /// 键盘场景（textEditing / 全候选禁用 / 非 workspace keyWindow 的 strict）在菜单
+    /// 侧也均为 no-op 死路径——一律跳过；鼠标点击菜单（currentEvent 非 keyDown）照常。
+    static func menuShouldRun(_ spec: ShortcutSpec, triggeredBy event: NSEvent?) -> Bool {
+        !(spec.dispatchVia == .monitor && event?.type == .keyDown)
     }
 
     /// R1 排序：语境精确命中 0，global 1，跨语境 2。

@@ -265,6 +265,7 @@ final class WorkspaceManager {
         guard let resolution = CommandDispatch.resolve(stroke, focus: focus, target: target) else {
             return event
         }
+        CommandDispatchTelemetry.monitorDispatchCount += 1
         if let index = resolution.index {
             resolution.spec.indexedAction?(target, index)
         } else {

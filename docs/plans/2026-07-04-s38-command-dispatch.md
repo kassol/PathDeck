@@ -25,6 +25,20 @@
 - ⌘↑ Go to Parent 获得实际键盘绑定（原无任何派发路径，仅浮窗展示）。
 - ⌘1–9 目标 tab 越界时吞键 no-op（原放行；无可观察差异）。
 
+## 回归修复（2026-07-05）
+
+上线后 ⌘T 双开：monitor 返回 nil 拦不住同一 sendEvent 内的菜单 key-equivalent
+处理（探针实测 monitor 与菜单各执行一次；S38 前不双开是因为 SwiftUI 菜单派发在
+AppKit first responder 下本来就死）。修复：`CommandDispatch.menuShouldRun` 守卫
+runCommand / runIndexedCommand——monitor 型命令的键盘触发菜单执行一律跳过。
+回归测试 `CommandTSingleFireTests`：真事件 nextEvent→sendEvent 泵 + 派发遥测
+（`CommandDispatchTelemetry` 测试缝）断言单发 + 守卫规则矩阵。详见 ADR-0002 补充。
+
+顺带发现的既有隐患（未修，另行处理）：`NSApp.delegate as? AppDelegate` 在运行中为
+nil（SwiftUI @NSApplicationDelegateAdaptor 装的是转发 delegate），`fallbackManager(nil)`
+的兜底分支恒 nil——Settings 为 key 时 allowsFallback 命令（⌘⇧. / ⌘T / ⌘⇧T）实际
+no-op，且 S37 菜单兜底时代即如此，非 S38 引入。
+
 ## 验证
 
 - `xcodebuild ... -only-testing:PathDeckTests -parallel-testing-enabled NO test`：

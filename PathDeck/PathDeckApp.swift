@@ -37,15 +37,22 @@ private func workspaceManager() -> WorkspaceManager? {
 
 /// 菜单命令统一入口：动作定义在 ShortcutRegistry 命令表（S37）。controller 解析仍严格
 /// keyWindow；workspace 型命令收到 nil 时由命令表 no-op，responder-chain / 全局偏好型照常执行。
+/// monitor 型命令的键盘触发经 menuShouldRun 跳过（同一 sendEvent 内 monitor 已执行，
+/// 菜单 key-equivalent 不受 monitor 返回 nil 抑制——⌘T 双开根因，见 ADR-0002）。
 @MainActor
 private func runCommand(_ id: String) {
-    ShortcutRegistry.spec(id)?.action?(keyWorkspaceController())
+    guard let spec = ShortcutRegistry.spec(id),
+          CommandDispatch.menuShouldRun(spec, triggeredBy: NSApp.currentEvent) else { return }
+    CommandDispatchTelemetry.menuRunIDs.append(id)
+    spec.action?(keyWorkspaceController())
 }
 
-/// 参数化命令（⌘1–9）菜单入口：行为同样住在命令表（indexedAction）。
+/// 参数化命令（⌘1–9）菜单入口：行为同样住在命令表（indexedAction），守卫同 runCommand。
 @MainActor
 private func runIndexedCommand(_ id: String, _ n: Int) {
-    ShortcutRegistry.spec(id)?.indexedAction?(keyWorkspaceController(), n)
+    guard let spec = ShortcutRegistry.spec(id),
+          CommandDispatch.menuShouldRun(spec, triggeredBy: NSApp.currentEvent) else { return }
+    spec.indexedAction?(keyWorkspaceController(), n)
 }
 
 /// 菜单键位从命令表 match 派生（S38）——仅作菜单显示与非 workspace keyWindow 时的
