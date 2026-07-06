@@ -46,10 +46,11 @@ struct WorkspaceRootView: View {
             )
             .toolbar {
                 ToolbarItem(placement: .navigation) {
+                    // ⌘↑ 由全局 CommandDispatch 派发（goToParent），此处不得再绑
+                    // .keyboardShortcut——视图层快捷键与 monitor 双发（2026-07-06 回归）。
                     Button { workspace.goUp() } label: {
                         Image(systemName: "chevron.up")
                     }
-                    .keyboardShortcut(.upArrow, modifiers: .command)
                     .help("Go to Parent")
                 }
                 ToolbarItem(placement: .primaryAction) {

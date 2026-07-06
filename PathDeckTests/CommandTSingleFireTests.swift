@@ -41,6 +41,67 @@ struct CommandTSingleFireTests {
                 "一次 ⌘T 应只执行一条派发路径，实际 monitor=\(monitorFires) menu=\(menuFires)")
     }
 
+    /// 全 monitor 键位管线矩阵：对每个 monitor 型命令投递真事件（focus nil 语境——
+    /// keyWindow 不可得），allowsFallback 应恰好执行 1 次（monitor），strict 应 0 次
+    /// （monitor 放行 + 菜单守卫跳过）。任何键 >expected 即存在双派发泄漏。
+    @Test
+    func everyMonitorKeystrokeFiresExpectedTimesPipelineWide() throws {
+        let previous = WorkspaceManager.appShared
+        defer { WorkspaceManager.appShared = previous }
+        let suite = UserDefaults(suiteName: "CommandTMatrix-\(UUID().uuidString)")!
+        let manager = WorkspaceManager(
+            preferences: WorkspacePreferences(defaults: suite),
+            pinnedFolders: PinnedFolders(userDefaults: suite),
+            engine: GhosttyTerminalEngine(),
+            router: AppRouter(),
+            persistence: WorkspacePersistence(defaults: suite)
+        )
+        WorkspaceManager.appShared = manager
+
+        // 按键位去重（⌘T/⌘W/⌘⇧T 各对应双语义两条命令，管线只关心「一次按键一次执行」；
+        // focus nil 下具体命中哪条与前序迭代的栈状态有关——如关窗入 Close History——
+        // 故断言上限而非精确值）。
+        var seen = Set<KeyMatch>()
+        for spec in ShortcutRegistry.all where spec.dispatchVia == .monitor && !spec.isReserved {
+            guard seen.insert(spec.match).inserted else { continue }
+            let event = try #require(syntheticEvent(for: spec.match), "无法构造事件: \(spec.id)")
+            CommandDispatchTelemetry.reset()
+            NSApp.postEvent(event, atStart: false)
+            pump(0.4)
+            let fires = CommandDispatchTelemetry.monitorDispatchCount
+                + CommandDispatchTelemetry.menuRunIDs.count
+            #expect(fires <= 1,
+                    "\(spec.id): 双派发泄漏，执行 \(fires) 次 monitor=\(CommandDispatchTelemetry.monitorDispatchCount) menu=\(CommandDispatchTelemetry.menuRunIDs)")
+            // 清理 newTab 等在隔离 manager 上开的窗口
+            let opened = manager.controllers
+            opened.forEach { $0.close() }
+        }
+    }
+
+    private func syntheticEvent(for match: KeyMatch) -> NSEvent? {
+        var flags: NSEvent.ModifierFlags = []
+        if match.modifiers.contains(.command) { flags.insert(.command) }
+        if match.modifiers.contains(.shift) { flags.insert(.shift) }
+        if match.modifiers.contains(.option) { flags.insert(.option) }
+        if match.modifiers.contains(.control) { flags.insert(.control) }
+        let chars: String
+        var keyCode: UInt16 = 0
+        switch match {
+        case .char(let ch, _):
+            chars = String(ch)
+        case .keyCode(let code, _):
+            keyCode = code
+            chars = code == 48 ? "\t" : "`"
+        case .digits(let range, _):
+            chars = "\(range.lowerBound)"
+        }
+        return NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: 0, context: nil, characters: chars,
+            charactersIgnoringModifiers: chars, isARepeat: false, keyCode: keyCode
+        )
+    }
+
     // MARK: - menuShouldRun 守卫规则矩阵
 
     private func keyDownEvent() -> NSEvent {

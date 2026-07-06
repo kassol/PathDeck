@@ -271,6 +271,10 @@ final class WorkspaceManager {
         guard let resolution = CommandDispatch.resolve(stroke, focus: focus, target: target) else {
             return event
         }
+        // 按键重复吞而不执行：菜单 key-equivalent 天然不响应 isARepeat，S38 迁到
+        // monitor 后须保持同语义（⌘⇧. 长按连发致偶数次 toggle 视觉上「失效」，
+        // 2026-07-06 回归）。已认领键位的 repeat 消费掉，防止泄漏给 responder 链。
+        if event.isARepeat { return nil }
         CommandDispatchTelemetry.monitorDispatchCount += 1
         if let index = resolution.index {
             resolution.spec.indexedAction?(target, index)

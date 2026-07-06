@@ -49,5 +49,10 @@ monitor 内联匹配、菜单字面量）、目标 Workspace 解析三套语义�
 - 改键位 / 加命令只改 `ShortcutRegistry`；monitor、菜单、浮窗、Palette、终端拦截自动跟随。
 - 派发决策可测：`CommandDispatchTests` 矩阵（键 × 焦点 × enabled）+
   `CommandMonitorAdapterTests` 合成 NSEvent（含 S32 回归）。
-- ⌘↑（Go to Parent）获得实际键盘绑定（此前仅浮窗展示与终端拦截，无任何派发路径）。
+- **monitor 型命令的键位不得在视图层再绑 `.keyboardShortcut`**（2026-07-06 回归实证：
+  WorkspaceRootView 面包屑按钮的 ⌘↑ 视图级快捷键与 monitor 双发——视图级快捷键
+  同样不受 monitor 返回 nil 抑制）。视图按钮保留点击，键位一律交 CommandDispatch。
+- **monitor 对已认领键位的 isARepeat 吞而不执行**：菜单 key-equivalent 天然不响应
+  按键重复，前菜单键（⌘⇧. 等）迁到 monitor 后必须保持同语义，否则长按连发
+  （偶数次 toggle 视觉上「失效」，2026-07-06 回归）。
 - 新增可派发快捷键时默认 `dispatchVia: .monitor`，不再评估「SwiftUI 会不会派发」。

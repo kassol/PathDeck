@@ -22,7 +22,8 @@
 ## 行为变化（评审时逐条确认）
 
 - ⌘⇧T 终端焦点且终端关闭历史为空 → 回退重开窗口（原吞键 no-op）。
-- ⌘↑ Go to Parent 获得实际键盘绑定（原无任何派发路径，仅浮窗展示）。
+- ⌘↑ Go to Parent 改由 CommandDispatch 派发（原绑定在 WorkspaceRootView 面包屑按钮的
+  视图级 `.keyboardShortcut`——评审期误判为「无绑定」，2026-07-06 回归修正）。
 - ⌘1–9 目标 tab 越界时吞键 no-op（原放行；无可观察差异）。
 
 ## 回归修复（2026-07-05）
@@ -41,6 +42,16 @@ no-op，S37 菜单兜底时代即如此，非 S38 引入。修复：`WorkspaceMa
 （static weak，AppDelegate 启动唯一注册点）替换 delegate cast；顺带删除同模式的
 孤儿 helper `PathDeckApp.workspaceManager()`（无调用方）。回归测试
 `ShortcutCommandTests.fallbackCommandsReachAppSharedManagerWithoutController`。
+
+## 回归修复第二轮（2026-07-06）
+
+- **⌘↑ 双发**：WorkspaceRootView 面包屑按钮残留视图级 `.keyboardShortcut(.upArrow, ⌘)`，
+  与 monitor 双发（视图级快捷键同样不受 monitor 返回 nil 抑制）。删视图绑定，按钮保留点击。
+- **⌘⇧. 视觉失效**：前菜单键迁 monitor 后失去菜单对 isARepeat 的天然抑制，三键和弦
+  按压稍久即连发、偶数次 toggle 归位。`dispatchCommand` 对已认领键位的 repeat 吞而不执行。
+- 管线矩阵测试 `everyMonitorKeystrokeFiresExpectedTimesPipelineWide`（全 monitor 键位
+  按键位去重断言无双派发）+ `repeatKeyDownsAreSwallowedWithoutExecuting`。
+- 规则入 ADR-0002：monitor 型命令键位禁止视图层重复绑定；repeat 吞而不执行。
 
 ## 验证
 

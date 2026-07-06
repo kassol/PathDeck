@@ -108,6 +108,32 @@ struct CommandMonitorAdapterTests {
         #expect(consumed == nil)
     }
 
+    /// 按键重复（isARepeat）：已认领键位吞而不执行（菜单 key-equivalent 的原生语义，
+    /// ⌘⇧. 长按连发致偶数次 toggle 视觉失效的回归）；未认领键位照常放行。
+    @Test
+    func repeatKeyDownsAreSwallowedWithoutExecuting() throws {
+        let manager = makeManager()
+        let c = manager.openNewWindow(cwd: FileManager.default.temporaryDirectory)
+        defer { c.close() }
+
+        let repeatToggle = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+            windowNumber: 0, context: nil, characters: ".",
+            charactersIgnoringModifiers: ".", isARepeat: true, keyCode: 47
+        ))
+        let before = manager.preferences.showHidden
+        let consumed = manager.dispatchCommand(for: repeatToggle, context: (target: c, focus: .file))
+        #expect(consumed == nil, "已认领键位的 repeat 应吞掉")
+        #expect(manager.preferences.showHidden == before, "repeat 不得执行 action")
+
+        let repeatUnknown = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0,
+            windowNumber: 0, context: nil, characters: "k",
+            charactersIgnoringModifiers: "k", isARepeat: true, keyCode: 40
+        ))
+        #expect(manager.dispatchCommand(for: repeatUnknown, context: (target: c, focus: .file)) === repeatUnknown)
+    }
+
     /// monitor 安装/拆除幂等（token 管理，不重复安装）。
     @Test
     func monitorInstallRemoveIsIdempotent() {
