@@ -169,6 +169,18 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
                 }
             }
             return true
+        case GHOSTTY_ACTION_OPEN_URL:
+            // 终端输出中被 core 检测到的 URL（含 OSC 8 超链接）⌘Click：core 负责手势判定
+            // 与下划线渲染，宿主只需响应打开请求，交系统默认程序。
+            let openURL = action.action.open_url
+            guard openURL.kind == GHOSTTY_ACTION_OPEN_URL_KIND_TEXT,
+                  let ptr = openURL.url, openURL.len > 0 else { return false }
+            let raw = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(openURL.len)), as: UTF8.self)
+            guard let url = Self.openableURL(from: raw) else { return false }
+            DispatchQueue.main.async {
+                NSWorkspace.shared.open(url)
+            }
+            return true
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             // 子进程（shell）退出：Ghostty embedder 模型把退出决策委托给宿主。
             // 关闭对应 tab，并 return true 表示已处理——否则 Ghostty 显示默认
@@ -179,6 +191,13 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         default:
             return false
         }
+    }
+
+    /// OPEN_URL action 的 URL 解析决策（纯函数，可单测）：必须能解析为带 scheme 的 URL，
+    /// 否则拒绝——core 发来的都是 regex/OSC 8 命中的完整 URI，无 scheme 即异常数据。
+    static func openableURL(from raw: String) -> URL? {
+        guard let url = URL(string: raw), url.scheme != nil else { return nil }
+        return url
     }
 
     /// 合并多次 wakeup 为主线程一次 tick。wakeup 在 I/O 线程高频触发，禁止每次都 tick。
