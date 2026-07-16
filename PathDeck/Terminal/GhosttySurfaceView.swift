@@ -18,6 +18,8 @@ final class GhosttySurfaceView: NSView {
     var initialCwd: URL?
     var onSurfaceReady: (() -> Void)?
     var onSurfaceFailed: ((SurfaceFailureReason) -> Void)?
+    /// ⌘Click 命中 Path Link（FR-BRIDGE-003）：engine 反查 session 后派发 Locate。
+    var onPathLinkClick: ((PathLink) -> Void)?
     private(set) var surface: ghostty_surface_t?
     private var markedText: String?
     private var heldModifierKeycodes: Set<UInt16> = []
@@ -177,6 +179,13 @@ final class GhosttySurfaceView: NSView {
     override func mouseDown(with event: NSEvent) {
         let wasFocused = window?.firstResponder === self
         window?.makeFirstResponder(self)
+        // ⌘Click 命中 Path Link → 本地 Locate，不进 core（绕过 mouse reporting，终端惯例）；
+        // 未命中则照常转发，core 自己的 URL ⌘Click（OPEN_URL）不受影响。
+        if event.modifierFlags.contains(.command), let link = pathLink(at: event) {
+            suppressNextLeftMouseUp = true
+            onPathLinkClick?(link)
+            return
+        }
         guard wasFocused, let surface else {
             suppressNextLeftMouseUp = true
             return
@@ -504,6 +513,55 @@ final class GhosttySurfaceView: NSView {
     private func surfacePoint(from event: NSEvent) -> (x: Double, y: Double) {
         let local = convert(event.locationInWindow, from: nil)
         return (local.x, bounds.height - local.y)
+    }
+
+    // MARK: - Path Link（FR-BRIDGE-003）
+
+    /// 点击像素 → 格子坐标 → 读取该行文本 → Path Link 检测。
+    /// 格子换算：click 点（view point，左上原点）× scale − padding px，除以 cell px。
+    /// window-padding 由 ghostty 按 content scale 缩放（`TerminalConfigWriter` 写 pt 值）。
+    private func pathLink(at event: NSEvent) -> PathLink? {
+        guard let surface else { return nil }
+        let size = ghostty_surface_size(surface)
+        guard size.columns > 0, size.rows > 0,
+              size.cell_width_px > 0, size.cell_height_px > 0 else { return nil }
+
+        let pt = surfacePoint(from: event)
+        let scale = scaleFactor
+        let paddingPx = Double(TerminalPreferences.shared.padding) * scale
+        let xPx = pt.x * scale - paddingPx
+        let yPx = pt.y * scale - paddingPx
+        guard xPx >= 0, yPx >= 0 else { return nil }
+
+        let col = Int(xPx / Double(size.cell_width_px))
+        let row = Int(yPx / Double(size.cell_height_px))
+        guard col < Int(size.columns), row < Int(size.rows) else { return nil }
+
+        guard let line = viewportRowText(row: row, columns: size.columns) else { return nil }
+        return PathLinkDetector.detect(line: line, index: col,
+                                       probe: PathLinkDetector.fileSystemProbe)
+    }
+
+    /// 读取 viewport 第 `row` 行（0-based，顶部为 0）的整行文本。
+    private func viewportRowText(row: Int, columns: UInt16) -> String? {
+        guard let surface else { return nil }
+        var selection = ghostty_selection_s()
+        selection.top_left = ghostty_point_s(
+            tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+            x: 0, y: UInt32(row)
+        )
+        selection.bottom_right = ghostty_point_s(
+            tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+            x: UInt32(columns) - 1, y: UInt32(row)
+        )
+        selection.rectangle = false
+
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        guard let ptr = text.text, text.text_len > 0 else { return nil }
+        return String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(text.text_len)),
+                      as: UTF8.self)
     }
 
     override func mouseUp(with event: NSEvent) {

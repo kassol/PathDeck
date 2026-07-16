@@ -25,6 +25,9 @@ final class WorkspaceModel {
     var pendingRenameURL: URL?
     /// 命令式选择信号：驱动 `FileTableView` 选中这组 URL 的行并滚动到首项（单项即长度 1），消费后置 nil。
     var revealSelection: [URL]?
+    /// 本次 reveal 是否把焦点交给文件列表。终端 ⌘Click Locate 置 false（焦点留在终端，ADR-0003），
+    /// 其余 reveal 场景保持 true。每个 revealSelection 写点都显式设置。
+    var revealTakesFocus: Bool = true
     var isSearching: Bool = false
     var searchQuery: String = "" {
         didSet { applySearch() }
@@ -100,12 +103,14 @@ final class WorkspaceModel {
     }
 
     /// 导航到首项父目录并高亮选择集（跨目录 reveal / Open Selection，单项即长度 1）。
-    func reveal(_ fileURLs: [URL]) {
+    /// `takingFocus: false` = 选中但不夺焦（终端 ⌘Click Locate）。
+    func reveal(_ fileURLs: [URL], takingFocus: Bool = true) {
         guard let first = fileURLs.first else { return }
         navigate(to: first.deletingLastPathComponent())
         let names = Set(fileURLs.map(\.lastPathComponent))
         let targets = items.filter { names.contains($0.name) }.map(\.url)
         selectedURLs = targets
+        revealTakesFocus = takingFocus
         revealSelection = targets
     }
 
@@ -182,6 +187,7 @@ final class WorkspaceModel {
         reload()
         if !newURLs.isEmpty {
             selectedURLs = newURLs
+            revealTakesFocus = true
             revealSelection = newURLs
         }
     }

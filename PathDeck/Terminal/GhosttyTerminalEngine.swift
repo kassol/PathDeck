@@ -5,6 +5,7 @@ final class GhosttyTerminalEngine: TerminalEngine {
     var onSessionClose: ((UUID) -> Void)?
     var onCwdChange: ((UUID, URL) -> Void)?
     var onTitleChange: ((UUID, String) -> Void)?
+    var onPathLinkClick: ((UUID, PathLink) -> Void)?
     var onPendingDropped: ((UUID, Int, PendingDropReason) -> Void)?
 
     private let engineID = ObjectIdentifier(UUID.self as Any.Type)
@@ -86,6 +87,9 @@ final class GhosttyTerminalEngine: TerminalEngine {
         }
         view.onSurfaceFailed = { [weak self] reason in
             self?.handleSurfaceCreationFailure(id: id, reason: reason)
+        }
+        view.onPathLinkClick = { [weak self] link in
+            self?.onPathLinkClick?(id, link)
         }
         surfaceViews[id] = view
         return view

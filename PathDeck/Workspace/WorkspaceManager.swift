@@ -417,6 +417,9 @@ final class WorkspaceManager {
         engine.onTitleChange = { [weak self] id, title in
             Task { @MainActor in self?.handleEngineTitleChange(id, title: title) }
         }
+        engine.onPathLinkClick = { [weak self] id, link in
+            Task { @MainActor in self?.handleEnginePathLinkClick(id, link: link) }
+        }
         engine.onPendingDropped = { id, count, reason in
             NSLog("[PathDeck] dropped %d pending text(s) for session %@: %@",
                   count, id.uuidString, String(describing: reason))
@@ -438,5 +441,10 @@ final class WorkspaceManager {
         guard let controller = findControllerOwning(sessionID: id),
               controller.store.session(id)?.isManuallyRenamed != true else { return }
         controller.renameTerminal(id, to: title, manual: false)
+    }
+
+    private func handleEnginePathLinkClick(_ id: UUID, link: PathLink) {
+        guard let controller = findControllerOwning(sessionID: id) else { return }
+        controller.locate(link)
     }
 }

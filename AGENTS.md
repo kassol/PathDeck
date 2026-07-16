@@ -64,6 +64,7 @@ PathDeck/Info.plist        URL Scheme / NSServices / CFBundleDocumentTypes / UTE
 CLI/                       pathdeck 命令行工具 target（pathdeck-cli，product name: pathdeck）
 CLI/main.swift             CLI 入口：解析参数 → CLICommand.parse → /usr/bin/open pathdeck://
 CLI/CLICommand.swift       参数解析 + URL 构造纯函数（synchronized group 同时编译到 PathDeck app target 供单测，main.swift 经 membershipExceptions 排除）
+PathDeck/ContextBridge/    Context Bridge 纯逻辑模块（Path Link 检测，FR-BRIDGE-003 / ADR-0003），见其 AGENTS.md
 PathDeck/FileWorkspace/    文件工作台模块（目录浏览、列表视图、Preview Pane、FSWatcher），见其 AGENTS.md
 PathDeck/Terminal/         内嵌 libghostty 真终端模块（多 Tab + TerminalEngine 协议 + cwd 同步 + 外观/主题偏好透传），见其 AGENTS.md
 PathDeck/Settings/         Settings 窗口（左分类右详情：Appearance 主题画廊+字体/透明度 / Terminal shell+scrollback），见其 AGENTS.md
@@ -77,7 +78,7 @@ docs/plans/                开发计划，按 `YYYY-MM-DD-<需求名>.md` 每需
 design/                    设计稿源文件（standalone HTML，可浏览器打开看可视参考），不进 build
 ```
 
-规划模块（落地时各自补一份子目录 AGENTS.md）：`ContextBridge` / `Extensions`（`FileWorkspace`、`Terminal`、`Workspace` 已落地；`ChangeJournal` 已在 D1 Dogfood 中移除）。
+规划模块（落地时各自补一份子目录 AGENTS.md）：`Extensions`（`FileWorkspace`、`Terminal`、`Workspace`、`ContextBridge` 已落地；`ChangeJournal` 已在 D1 Dogfood 中移除）。
 
 ### Sidebar 扩展路线
 
@@ -169,7 +170,7 @@ xcodebuild -deleteComponent MetalToolchain
 - 外科手术式修改：每行改动可追溯到明确需求，不顺手重构 / 改格式 / 动死代码。
 - 里程碑式提交；commit message 用英文，第三方可读产出物中不出现个人称谓。
 - 改完跑构建 + 测试（涉及 synchronized group 资源变动时用 **clean build**：同名 resource 冲突等问题增量 build 不暴露）。
-- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `FileWorkspace/AGENTS.md`、`Workspace/AGENTS.md`、`Terminal/AGENTS.md`、`Settings/AGENTS.md`、`Info.plist`。
+- 新增子目录 `AGENTS.md` 或其他 `.md` / 文档后，须在 `PathDeck.xcodeproj` 把它加入 `PathDeck` synchronized group 的 `membershipExceptions`（`PBXFileSystemSynchronizedBuildFileExceptionSet`）——否则各目录同名 `AGENTS.md` 都拷向 `Contents/Resources/AGENTS.md` 冲突，致 build 失败。同理 `PathDeck/Info.plist` 也必须排除（否则 synchronized group 把它当 resource 拷入 bundle，与 `INFOPLIST_FILE` 指向的同一文件冲突）。当前已排除 `ContextBridge/AGENTS.md`、`FileWorkspace/AGENTS.md`、`Workspace/AGENTS.md`、`Terminal/AGENTS.md`、`Settings/AGENTS.md`、`Info.plist`。
 - i18n：用户可见字符串用英文 key，SwiftUI 直接写字面量（`Text("Key")`、`.help("Key")`）自动走 `LocalizedStringKey`；AppKit 用 `String(localized: "Key")`。翻译在 `Localizable.xcstrings`（String Catalog，en + zh-Hans）。条件文案用 `LocalizedStringKey(condition ? "A" : "B")`（三元返回 `String` 不走自动本地化）。
 - 用户可见文案避免：Agent Runtime / Profile、Tool Calling、Git / branch / commit / worktree / checkout、sandbox、orchestration、Finder Replacement、AI Finder（见 `docs/prd.md` §20.4）。
 
@@ -191,6 +192,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 里程碑级变更记录。各切片详细实现见 `docs/plans/` 和子目录 `AGENTS.md` 变更日志。
 
+- 2026-07-16 **S39 FR-BRIDGE-003 Terminal 输出路径可点击（#4 URL + #5 绝对路径骨干）**（ADR-0003：⌘Click 只定位不打开）：#4 `GhosttyApp.handleAction` 接通 `GHOSTTY_ACTION_OPEN_URL`——core 检测的 URL（含 OSC 8）⌘Click 交系统默认程序打开。#5 新模块 `ContextBridge/`（`PathLinkDetector` 纯函数：token 切分/包裹符剥离/尾部标点逐字符剥离+每步存在性检查，probe 注入可单测）；`GhosttySurfaceView.mouseDown` ⌘Click 拦截（`ghostty_surface_size` 像素→格子 + `ghostty_surface_read_text` 读行，命中不进 core 绕过 mouse reporting）；链路 view → `TerminalEngine.onPathLinkClick` → `WorkspaceManager` 反查 → `WorkspaceController.locate`（文件 reveal 不夺焦、目录 navigate；`WorkspaceModel.reveal` 新增 `takingFocus:` 参数）。相对路径/cwd/~/行号/引号/file:// 见 #6，⌘悬停反馈见 #7。测试 +21（`GhosttyOpenURLTests` 6 + `PathLinkDetectorTests` 15），全量 336。
 - 2026-07-06 **Fix ⌘↑ 双发 + ⌘⇧. 连发回归**（ADR-0002 再补两条规则）：① WorkspaceRootView 面包屑按钮残留视图级 `.keyboardShortcut(.upArrow, ⌘)` 与 monitor 双发（视图级快捷键同样不受 monitor 返回 nil 抑制；S38 评审期「⌘↑ 原无绑定」结论有误，真实绑定就在这里）——删视图绑定，规则：monitor 型命令键位禁止视图层重复绑定。② 前菜单键迁 monitor 后失去菜单对 isARepeat 的天然抑制，⌘⇧. 长按连发偶数次 toggle 视觉「失效」——`dispatchCommand` 对已认领键位 repeat 吞而不执行。新增管线矩阵测试（全 monitor 键位按键位去重断言无双派发）+ repeat 抑制测试。全量 315。
 - 2026-07-05 **Fix ⌘T 双开回归**（S38 上线后发现，ADR-0002 补充）：local monitor 返回 nil 只拦事件向 responder 的派发，拦不住同一 `sendEvent` 内的菜单 key-equivalent 处理——monitor 与菜单各执行一次致双开；S38 前不双开是 SwiftUI 菜单派发在 AppKit first responder 下本来就死。修复：`CommandDispatch.menuShouldRun` 守卫 `runCommand`/`runIndexedCommand`（monitor 型命令键盘触发菜单一律跳过，点击照常；Palette 直调 action 不受影响）。回归测试 `CommandTSingleFireTests`（真事件 sendEvent 泵 + `CommandDispatchTelemetry` 遥测测试缝）。顺带发现并同日修复既有隐患：`NSApp.delegate as? AppDelegate` 运行时为 nil（SwiftUI adaptor 转发 delegate），`fallbackManager` 兜底分支恒 nil，Settings 焦点 allowsFallback 命令实际 no-op（S37 起即如此）——新增 `WorkspaceManager.appShared`（static weak，AppDelegate 启动唯一注册点）替换 delegate cast，删同模式孤儿 helper `PathDeckApp.workspaceManager()`。全量 313 测试。
 - 2026-07-04 **S38 Command Dispatch 收拢**（架构评审首推候选，ADR-0002）：键位三处分写（registry 展示 / 6 个 per-window monitor 内联匹配 / 菜单字面量）收敛为单源单路径。`ShortcutSpec` 增 `match: KeyMatch`（char/keyCode/digit-range + 修饰集，键帽/菜单键位/终端拦截全派生）+ `dispatchVia`（monitor/menuOnly/viewLocal）+ `targetPolicy`（workspaceStrict/allowsFallback）+ `indexedAction`（⌘1–9 行为进表，原 monitor 与菜单各一份）。新增 `CommandDispatch.resolve` 纯决策函数（R1 仲裁：语境精确>global>跨语境、首个 enabled 胜出、全不可用放行；textEditing 一律放行——重命名中 ⌘⌫ 不得移废纸篓；非 workspace keyWindow 仅 allowsFallback 执行）。`WorkspaceManager.installCommandMonitor` 全局唯一 monitor adapter（AppDelegate 启动装载），删 `WorkspaceController` 5 个键位 monitor（浮窗 hold-tracker 保留）。行为变化：⌘⇧T 终端栈空回退重开窗口（原吞键 no-op）；⌘↑ Go to Parent 获得实际绑定（原仅浮窗展示无派发路径）。测试 +17（resolve 矩阵 11 + adapter 合成 NSEvent 6，含 S32 ⌘T 回归）；全量 309。本地跑单测须 `-parallel-testing-enabled NO`（见常用命令注 2）。详见 `docs/plans/2026-07-04-s38-command-dispatch.md`。

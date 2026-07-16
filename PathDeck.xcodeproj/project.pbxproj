@@ -69,6 +69,7 @@
 		BDA2E8A32FDCEFB0002B9364 /* Exceptions for "PathDeck" folder in "PathDeck" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				ContextBridge/AGENTS.md,
 				FileWorkspace/AGENTS.md,
 				Info.plist,
 				Settings/AGENTS.md,

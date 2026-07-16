@@ -11,6 +11,8 @@ struct FileTableView: NSViewRepresentable {
     var dirtyDirectories: Set<String>?
     var pendingRenameURL: URL?
     var revealSelection: [URL]?
+    /// reveal 时是否把 first responder 交给列表；终端 ⌘Click Locate 传 false（焦点留在终端）。
+    var revealTakesFocus: Bool
     /// 建列时应用的持久化列宽（column id → width），缺失的列用内置默认值。仅 makeNSView 读取。
     var initialColumnWidths: [String: CGFloat]
     /// 建列时应用的排序列（列头指示箭头与 WorkspaceModel 的实际排序一致）。仅 makeNSView 读取。
@@ -148,6 +150,7 @@ struct FileTableView: NSViewRepresentable {
 
         if let targets = revealSelection, !targets.isEmpty {
             let clearReveal = onClearRevealSelection
+            let takesFocus = revealTakesFocus
             DispatchQueue.main.async {
                 let rows = IndexSet(targets.compactMap { url in
                     let row = ov.row(forItem: coord.findNodeByURL(url))
@@ -158,7 +161,9 @@ struct FileTableView: NSViewRepresentable {
                     if let firstRow = rows.first {
                         ov.scrollRowToVisible(firstRow)
                     }
-                    ov.window?.makeFirstResponder(ov)
+                    if takesFocus {
+                        ov.window?.makeFirstResponder(ov)
+                    }
                 }
                 clearReveal()
             }

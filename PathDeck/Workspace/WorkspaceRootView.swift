@@ -178,6 +178,7 @@ struct WorkspaceRootView: View {
                     dirtyDirectories: workspace.dirtyDirectories,
                     pendingRenameURL: workspace.pendingRenameURL,
                     revealSelection: workspace.revealSelection,
+                    revealTakesFocus: workspace.revealTakesFocus,
                     initialColumnWidths: preferences.columnWidths,
                     initialSortColumn: workspace.sortColumn.rawValue,
                     initialSortAscending: workspace.sortAscending,

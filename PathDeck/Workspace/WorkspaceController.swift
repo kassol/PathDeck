@@ -222,6 +222,16 @@ final class WorkspaceController: NSWindowController, NSWindowDelegate {
         manager?.persistSession()
     }
 
+    /// Locate（CONTEXT.md「文件与终端联动」）：文件 → reveal 并选中（Preview Pane 随之展示），
+    /// 目录 → 导航进入。不打开文件、不夺键盘焦点（ADR-0003，焦点留在终端）。
+    func locate(_ link: PathLink) {
+        if link.isDirectory {
+            workspace.navigate(to: link.url)
+        } else {
+            workspace.reveal([link.url], takingFocus: false)
+        }
+    }
+
     // MARK: - Command Palette
 
     /// Palette 关闭后要还的焦点（呼出时的 first responder）。
