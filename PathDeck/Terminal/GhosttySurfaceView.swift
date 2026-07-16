@@ -139,6 +139,7 @@ final class GhosttySurfaceView: NSView {
             releaseForwardedKeys(surface: surface)
         }
         clearComposition()
+        clearHover()
         return super.resignFirstResponder()
     }
 
@@ -458,6 +459,8 @@ final class GhosttySurfaceView: NSView {
             super.flagsChanged(with: event)
             return
         }
+        // ⌘ 按下/松开即时刷新悬停反馈（鼠标静止时 mouseMoved 不会来）。
+        updateHover(cmdHeld: event.modifierFlags.contains(.command))
         if markedText != nil { return }
 
         let keycode = event.keyCode
@@ -523,38 +526,146 @@ final class GhosttySurfaceView: NSView {
 
     // MARK: - Path Link（FR-BRIDGE-003）
 
-    /// 点击像素 → 格子坐标 → 读取该行文本 → Path Link 检测。
-    /// 格子换算：click 点（view point，左上原点）× scale − padding px，除以 cell px。
-    /// window-padding 由 ghostty 按 content scale 缩放（`TerminalConfigWriter` 写 pt 值）。
     private func pathLink(at event: NSEvent) -> PathLink? {
+        guard let cell = gridCell(atLocal: convert(event.locationInWindow, from: nil)) else { return nil }
+        return pathLink(atCell: cell)
+    }
+
+    /// view 本地点 → 格子坐标：(x, 高度翻转 y) × scale − padding px，除以 cell px，越界 nil。
+    /// window-padding 由 ghostty 按 content scale 缩放（`TerminalConfigWriter` 写 pt 值）。
+    private func gridCell(atLocal local: NSPoint) -> (col: Int, row: Int)? {
         guard let surface else { return nil }
         let size = ghostty_surface_size(surface)
         guard size.columns > 0, size.rows > 0,
               size.cell_width_px > 0, size.cell_height_px > 0 else { return nil }
 
-        let pt = surfacePoint(from: event)
         let scale = scaleFactor
         let paddingPx = Double(TerminalPreferences.shared.padding) * scale
-        let xPx = pt.x * scale - paddingPx
-        let yPx = pt.y * scale - paddingPx
+        let xPx = local.x * scale - paddingPx
+        let yPx = (bounds.height - local.y) * scale - paddingPx
         guard xPx >= 0, yPx >= 0 else { return nil }
 
         let col = Int(xPx / Double(size.cell_width_px))
         let row = Int(yPx / Double(size.cell_height_px))
         guard col < Int(size.columns), row < Int(size.rows) else { return nil }
+        return (col, row)
+    }
 
-        // 点击格必须非空白：行尾空区/词间空格直接 miss，也规避 read_text 尾部修剪的歧义。
-        guard let cell = viewportText(row: row, fromCol: col, toCol: col),
-              !cell.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+    /// 格子坐标 → 读取该行文本 → Path Link 检测（⌘Click 与 ⌘悬停共用的命中管线）。
+    private func pathLink(atCell cell: (col: Int, row: Int)) -> PathLink? {
+        guard let surface else { return nil }
+        let size = ghostty_surface_size(surface)
+        guard size.columns > 0 else { return nil }
+
+        // 所在格必须非空白：行尾空区/词间空格直接 miss，也规避 read_text 尾部修剪的歧义。
+        guard let cellText = viewportText(row: cell.row, fromCol: cell.col, toCol: cell.col),
+              !cellText.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
         // 格子列 ≠ 字符下标（CJK 等宽字符占 2 格 1 字符）：用 core 自己的选区语义换算——
-        // [0, col] 前缀的字符数减一即点击字符下标（前缀末格非空白，不受尾部修剪影响）。
-        guard let prefix = viewportText(row: row, fromCol: 0, toCol: col),
+        // [0, col] 前缀的字符数减一即所在字符下标（前缀末格非空白，不受尾部修剪影响）。
+        guard let prefix = viewportText(row: cell.row, fromCol: 0, toCol: cell.col),
               !prefix.isEmpty else { return nil }
         let index = prefix.count - 1
 
-        guard let line = viewportText(row: row, fromCol: 0, toCol: Int(size.columns) - 1) else { return nil }
+        guard let line = viewportText(row: cell.row, fromCol: 0, toCol: Int(size.columns) - 1) else { return nil }
         return PathLinkDetector.detect(line: line, index: index, cwd: reportedCwd,
                                        probe: PathLinkDetector.fileSystemProbe)
+    }
+
+    // MARK: - ⌘悬停反馈（FR-BRIDGE-003 #7）
+
+    /// 最近一次评估过的格子（同格不重复跑命中检测——快速扫过时的防抖）。
+    private var hoverCell: (col: Int, row: Int)?
+    private var hoverLink: PathLink?
+    /// 悬停期是否由本视图接管了指针（清理时才恢复 arrow，不踩掉别人设的指针）。
+    private var hoverCursorActive = false
+    private var lastMouseLocal: NSPoint?
+
+    private lazy var hoverOverlay: NSView = {
+        let container = HoverPassthroughView(frame: .zero)
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 4
+        container.layer?.borderWidth = 1
+        hoverOverlayLabel.font = .systemFont(ofSize: 11)
+        hoverOverlayLabel.textColor = .labelColor
+        hoverOverlayLabel.lineBreakMode = .byTruncatingMiddle
+        container.addSubview(hoverOverlayLabel)
+        return container
+    }()
+    private let hoverOverlayLabel = NSTextField(labelWithString: "")
+
+    /// 浮层与光标的偏移 / 内边距（pt）。
+    private static let hoverOverlayCursorOffset: CGFloat = 12
+    private static let hoverOverlayPadding = NSSize(width: 6, height: 3)
+
+    /// 浮层原点：光标右上偏移后 clamp 进 bounds（纯函数，可单测）。
+    static func hoverOverlayOrigin(cursor: NSPoint, overlaySize: NSSize,
+                                   in bounds: NSRect,
+                                   offset: CGFloat = hoverOverlayCursorOffset) -> NSPoint {
+        let x = min(max(cursor.x + offset, bounds.minX), max(bounds.maxX - overlaySize.width, bounds.minX))
+        let y = min(max(cursor.y + offset, bounds.minY), max(bounds.maxY - overlaySize.height, bounds.minY))
+        return NSPoint(x: x, y: y)
+    }
+
+    /// ⌘+悬停命中 Path Link：pointingHand + 浮层显示解析后的绝对路径；
+    /// 松 ⌘ / 移出命中区 / 终端失焦立即恢复。命中检测按格子缓存，不阻塞渲染。
+    private func updateHover(cmdHeld: Bool) {
+        guard cmdHeld, surface != nil, let local = lastMouseLocal,
+              let cell = gridCell(atLocal: local) else {
+            clearHover()
+            return
+        }
+        if hoverCell?.col != cell.col || hoverCell?.row != cell.row {
+            hoverCell = cell
+            hoverLink = pathLink(atCell: cell)
+            if let link = hoverLink {
+                showHoverFeedback(path: link.url.path(percentEncoded: false), near: local)
+            } else {
+                hideHoverFeedback()
+            }
+        }
+        if hoverLink != nil {
+            NSCursor.pointingHand.set()
+            hoverCursorActive = true
+        }
+    }
+
+    private func clearHover() {
+        hoverCell = nil
+        hoverLink = nil
+        hideHoverFeedback()
+    }
+
+    private func showHoverFeedback(path: String, near local: NSPoint) {
+        hoverOverlayLabel.stringValue = path
+        hoverOverlayLabel.sizeToFit()
+        let labelSize = hoverOverlayLabel.frame.size
+        let pad = Self.hoverOverlayPadding
+        let overlaySize = NSSize(width: labelSize.width + pad.width * 2,
+                                 height: labelSize.height + pad.height * 2)
+        hoverOverlayLabel.setFrameOrigin(NSPoint(x: pad.width, y: pad.height))
+        hoverOverlay.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        hoverOverlay.layer?.borderColor = NSColor.separatorColor.cgColor
+        hoverOverlay.frame = NSRect(origin: Self.hoverOverlayOrigin(cursor: local,
+                                                                    overlaySize: overlaySize,
+                                                                    in: bounds),
+                                    size: overlaySize)
+        if hoverOverlay.superview == nil {
+            addSubview(hoverOverlay)
+        }
+        hoverOverlay.isHidden = false
+    }
+
+    private func hideHoverFeedback() {
+        hoverOverlay.isHidden = true
+        if hoverCursorActive {
+            NSCursor.arrow.set()
+            hoverCursorActive = false
+        }
+    }
+
+    /// 浮层不拦鼠标事件（纯展示）。
+    private final class HoverPassthroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 
     /// 读取 viewport 第 `row` 行（0-based，顶部为 0）[fromCol, toCol] 闭区间的文本。
@@ -601,12 +712,16 @@ final class GhosttySurfaceView: NSView {
         guard let surface else { return }
         let pt = surfacePoint(from: event)
         ghostty_surface_mouse_pos(surface, pt.x, pt.y, mods(from: event.modifierFlags))
+        lastMouseLocal = convert(event.locationInWindow, from: nil)
+        updateHover(cmdHeld: event.modifierFlags.contains(.command))
     }
 
     override func mouseExited(with event: NSEvent) {
         if let surface {
             ghostty_surface_mouse_pos(surface, -1, -1, GHOSTTY_MODS_NONE)
         }
+        lastMouseLocal = nil
+        clearHover()
         NSCursor.arrow.set()
     }
 
@@ -703,6 +818,10 @@ final class GhosttySurfaceView: NSView {
         scrollMods |= (momentumValue << 1)
 
         ghostty_surface_mouse_scroll(surface, event.scrollingDeltaX, event.scrollingDeltaY, scrollMods)
+
+        // 滚动后光标下的行已换内容：作废格子缓存并按当前修饰键重估悬停。
+        hoverCell = nil
+        updateHover(cmdHeld: event.modifierFlags.contains(.command))
     }
 }
 
