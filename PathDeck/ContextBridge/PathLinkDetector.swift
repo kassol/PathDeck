@@ -45,8 +45,7 @@ nonisolated enum PathLinkDetector {
         ".", ",", ";", ":", "!", "?", ")", "]", "}", ">", "'", "\"", "`",
     ]
 
-    static func detect(line: String, index: Int, cwd: URL?,
-                       home: URL = FileManager.default.homeDirectoryForCurrentUser,
+    static func detect(line: String, index: Int, cwd: URL?, home: URL,
                        probe: (String) -> ProbeResult?) -> PathLink? {
         let chars = Array(line)
         guard index >= 0, index < chars.count else { return nil }

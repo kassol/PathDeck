@@ -162,7 +162,7 @@ xcodebuild -deleteComponent MetalToolchain
 **约束**：
 
 - 必须 pin Ghostty commit；升级当作 breaking 处理、预算迁移成本。
-- 业务层只依赖 `TerminalEngine` 协议，禁止在业务代码直接散用 libghostty C 符号。libghostty C 符号限于 `GhosttyApp.swift` 和 `GhosttySurfaceView.swift` 内部（见 `PathDeck/Terminal/AGENTS.md`）。
+- 业务层只依赖 `TerminalEngine` 协议，禁止在业务代码直接散用 libghostty C 符号。libghostty C 符号限于 `GhosttyApp.swift`、`GhosttySurfaceView.swift` 与 `GhosttyTerminalEngine.swift`（仅 `ghostty_surface_t` 句柄反查/handler 签名，不发起新 C 调用）内部（见 `PathDeck/Terminal/AGENTS.md`）。
 - fallback：SwiftTerm（纯 SPM、开箱即用，CPU 渲染、特性 / 性能低一档）。
 
 ### 编码与协作

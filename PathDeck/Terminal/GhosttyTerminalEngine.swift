@@ -50,7 +50,7 @@ final class GhosttyTerminalEngine: TerminalEngine {
     deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         if let appearanceObserver { NotificationCenter.default.removeObserver(appearanceObserver) }
-        GhosttyApp.shared.unregisterPwdHandler(id: registrationID)
+        GhosttyApp.shared.unregisterHandlers(id: registrationID)
     }
 
     /// 外观偏好变更：debounce 后重建全局 config 并广播到所有活动 surface（热重载，不重建）。
@@ -163,41 +163,40 @@ final class GhosttyTerminalEngine: TerminalEngine {
         states.filter { $0.exited }.map { $0.id }
     }
 
-    private func handlePwdChange(surface: ghostty_surface_t, pwd: String) {
-        for (id, view) in surfaceViews {
-            guard view.surface == surface else { continue }
-            let url: URL
-            if pwd.hasPrefix("file://") {
-                guard let parsed = URL(string: pwd) else { return }
-                url = URL(fileURLWithPath: parsed.path).standardizedFileURL
-            } else if let decoded = pwd.removingPercentEncoding {
-                url = URL(fileURLWithPath: decoded).standardizedFileURL
-            } else {
-                url = URL(fileURLWithPath: pwd).standardizedFileURL
-            }
-            view.reportedCwd = url
-            onCwdChange?(id, url)
-            return
+    /// surface → (sessionID, view) 反查（pwd/title/fileURL handler 共用）。
+    private func sessionEntry(for surface: ghostty_surface_t) -> (id: UUID, view: GhosttySurfaceView)? {
+        for (id, view) in surfaceViews where view.surface == surface {
+            return (id, view)
         }
+        return nil
+    }
+
+    private func handlePwdChange(surface: ghostty_surface_t, pwd: String) {
+        guard let entry = sessionEntry(for: surface) else { return }
+        let url: URL
+        if pwd.hasPrefix("file://") {
+            guard let parsed = URL(string: pwd) else { return }
+            url = URL(fileURLWithPath: parsed.path).standardizedFileURL
+        } else if let decoded = pwd.removingPercentEncoding {
+            url = URL(fileURLWithPath: decoded).standardizedFileURL
+        } else {
+            url = URL(fileURLWithPath: pwd).standardizedFileURL
+        }
+        entry.view.reportedCwd = url
+        onCwdChange?(entry.id, url)
     }
 
     private func handleTitleChange(surface: ghostty_surface_t, title: String) {
-        for (id, view) in surfaceViews {
-            guard view.surface == surface else { continue }
-            onTitleChange?(id, title)
-            return
-        }
+        guard let entry = sessionEntry(for: surface) else { return }
+        onTitleChange?(entry.id, title)
     }
 
     /// OPEN_URL 改道来的 file://（#6）：存在才构成 Path Link，随 onPathLinkClick 走 Locate；
     /// 不存在静默吞掉（与「不存在路径不触发」一致），绝不回落系统打开。
     private func handleFileURLOpen(surface: ghostty_surface_t, url: URL) {
-        for (id, view) in surfaceViews {
-            guard view.surface == surface else { continue }
-            guard let link = PathLinkDetector.link(fromFileURL: url,
-                                                   probe: PathLinkDetector.fileSystemProbe) else { return }
-            onPathLinkClick?(id, link)
-            return
-        }
+        guard let entry = sessionEntry(for: surface) else { return }
+        guard let link = PathLinkDetector.link(fromFileURL: url,
+                                               probe: PathLinkDetector.fileSystemProbe) else { return }
+        onPathLinkClick?(entry.id, link)
     }
 }

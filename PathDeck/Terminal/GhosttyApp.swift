@@ -28,32 +28,32 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
     private let tickLock = NSLock()
     private var tickScheduled = false
 
-    private let pwdLock = NSLock()
+    private let handlersLock = NSLock()
     private var pwdHandlers: [ObjectIdentifier: (ghostty_surface_t, String) -> Void] = [:]
     private var titleHandlers: [ObjectIdentifier: (ghostty_surface_t, String) -> Void] = [:]
     private var fileURLHandlers: [ObjectIdentifier: (ghostty_surface_t, URL) -> Void] = [:]
 
     func registerPwdHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, String) -> Void) {
-        pwdLock.lock(); defer { pwdLock.unlock() }
+        handlersLock.lock(); defer { handlersLock.unlock() }
         pwdHandlers[id] = handler
     }
 
-    func unregisterPwdHandler(id: ObjectIdentifier) {
-        pwdLock.lock(); defer { pwdLock.unlock() }
+    func unregisterHandlers(id: ObjectIdentifier) {
+        handlersLock.lock(); defer { handlersLock.unlock() }
         pwdHandlers.removeValue(forKey: id)
         titleHandlers.removeValue(forKey: id)
         fileURLHandlers.removeValue(forKey: id)
     }
 
     func registerTitleHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, String) -> Void) {
-        pwdLock.lock(); defer { pwdLock.unlock() }
+        handlersLock.lock(); defer { handlersLock.unlock() }
         titleHandlers[id] = handler
     }
 
     /// OPEN_URL 的 file:// 改道订阅（FR-BRIDGE-003 #6）：file:// 按本地路径走 Locate，
     /// 绝不 NSWorkspace.open（ADR-0003）。覆盖 OSC 8 href 为 file:// 而显示文本不是路径的场景。
     func registerFileURLHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, URL) -> Void) {
-        pwdLock.lock(); defer { pwdLock.unlock() }
+        handlersLock.lock(); defer { handlersLock.unlock() }
         fileURLHandlers[id] = handler
     }
 
@@ -159,9 +159,9 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         case GHOSTTY_ACTION_PWD:
             if let cStr = action.action.pwd.pwd, let surface {
                 let pwd = String(cString: cStr)
-                pwdLock.lock()
+                handlersLock.lock()
                 let handlers = pwdHandlers.values
-                pwdLock.unlock()
+                handlersLock.unlock()
                 DispatchQueue.main.async {
                     for handler in handlers { handler(surface, pwd) }
                 }
@@ -170,9 +170,9 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         case GHOSTTY_ACTION_SET_TITLE:
             if let cStr = action.action.set_title.title, let surface {
                 let title = String(cString: cStr)
-                pwdLock.lock()
+                handlersLock.lock()
                 let handlers = titleHandlers.values
-                pwdLock.unlock()
+                handlersLock.unlock()
                 DispatchQueue.main.async {
                     for handler in handlers { handler(surface, title) }
                 }
@@ -190,9 +190,9 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
             if url.isFileURL {
                 // file:// 按本地路径走 Locate、绝不打开（ADR-0003）；engine 订阅后反查 session。
                 guard let surface else { return true }
-                pwdLock.lock()
+                handlersLock.lock()
                 let handlers = fileURLHandlers.values
-                pwdLock.unlock()
+                handlersLock.unlock()
                 DispatchQueue.main.async {
                     for handler in handlers { handler(surface, url) }
                 }

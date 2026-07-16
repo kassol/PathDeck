@@ -33,6 +33,10 @@ final class GhosttySurfaceView: NSView {
     private var pressedMouseButtons: Set<Int> = []
     private var forwardedKeyPresses: Set<UInt16> = []
     private var keyUpMonitor: Any?
+    /// ⌘ 按放的观察型 monitor（仅刷新悬停反馈，事件原样放行）：flagsChanged 只派发给
+    /// first responder，终端未聚焦时松 ⌘ 靠它清掉滞留的浮层。
+    private var hoverFlagsMonitor: Any?
+    private var windowKeyObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -46,6 +50,12 @@ final class GhosttySurfaceView: NSView {
     deinit {
         if let monitor = keyUpMonitor {
             NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = hoverFlagsMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let observer = windowKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
         if let surface {
             ghostty_surface_free(surface)
@@ -70,12 +80,21 @@ final class GhosttySurfaceView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let observer = windowKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowKeyObserver = nil
+        }
         // surface 必须在挂上 window 后再创建，否则拿不到有效 layer/display → 黑屏。
         guard window != nil else {
             if let monitor = keyUpMonitor {
                 NSEvent.removeMonitor(monitor)
                 keyUpMonitor = nil
             }
+            if let monitor = hoverFlagsMonitor {
+                NSEvent.removeMonitor(monitor)
+                hoverFlagsMonitor = nil
+            }
+            clearHover()
             return
         }
         if surface == nil {
@@ -84,6 +103,7 @@ final class GhosttySurfaceView: NSView {
             syncSurfaceGeometry()
         }
         installKeyUpMonitorIfNeeded()
+        installHoverMonitorsIfNeeded()
         window?.makeFirstResponder(self)
     }
 
@@ -98,6 +118,24 @@ final class GhosttySurfaceView: NSView {
             key.text = nil
             _ = ghostty_surface_key(surface, key)
             return nil
+        }
+    }
+
+    /// 悬停清理钩子：⌘ 按放观察 monitor（终端未聚焦收不到 flagsChanged 派发）+
+    /// 窗口失 key（⌘⇥ 切走 / 切窗口）清浮层。
+    private func installHoverMonitorsIfNeeded() {
+        if hoverFlagsMonitor == nil {
+            hoverFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                self?.updateHover(cmdHeld: event.modifierFlags.contains(.command))
+                return event
+            }
+        }
+        if let window {
+            windowKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.clearHover() }
+            }
         }
     }
 
@@ -459,8 +497,6 @@ final class GhosttySurfaceView: NSView {
             super.flagsChanged(with: event)
             return
         }
-        // ⌘ 按下/松开即时刷新悬停反馈（鼠标静止时 mouseMoved 不会来）。
-        updateHover(cmdHeld: event.modifierFlags.contains(.command))
         if markedText != nil { return }
 
         let keycode = event.keyCode
@@ -557,17 +593,22 @@ final class GhosttySurfaceView: NSView {
         let size = ghostty_surface_size(surface)
         guard size.columns > 0 else { return nil }
 
-        // 所在格必须非空白：行尾空区/词间空格直接 miss，也规避 read_text 尾部修剪的歧义。
+        // 未写入格（行尾空区）直接 miss；写入的空格要放行——引号包裹含空格路径的空格格可命中。
         guard let cellText = viewportText(row: cell.row, fromCol: cell.col, toCol: cell.col),
-              !cellText.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+              let clickedChar = cellText.first else { return nil }
         // 格子列 ≠ 字符下标（CJK 等宽字符占 2 格 1 字符）：用 core 自己的选区语义换算——
-        // [0, col] 前缀的字符数减一即所在字符下标（前缀末格非空白，不受尾部修剪影响）。
+        // [0, col] 前缀的字符数减一即所在字符下标。
         guard let prefix = viewportText(row: cell.row, fromCol: 0, toCol: cell.col),
               !prefix.isEmpty else { return nil }
         let index = prefix.count - 1
 
         guard let line = viewportText(row: cell.row, fromCol: 0, toCol: Int(size.columns) - 1) else { return nil }
+        // 一致性校验：read_text 若修剪了尾部空白，index 会错位指到别的字符——错位即 miss，
+        // 保证「不存在/空白处不误触发」在任何修剪语义下都成立。
+        let chars = Array(line)
+        guard index < chars.count, chars[index] == clickedChar else { return nil }
         return PathLinkDetector.detect(line: line, index: index, cwd: reportedCwd,
+                                       home: FileManager.default.homeDirectoryForCurrentUser,
                                        probe: PathLinkDetector.fileSystemProbe)
     }
 
