@@ -10,12 +10,12 @@
 
 ## 目录结构
 
-- `PathLinkDetector.swift` — `PathLink` 值类型（url + isDirectory）+ `PathLinkDetector.detect(line:index:probe:)` 纯函数：token 切分（空白边界）→ 剥离前导包裹符 → 绝对路径前缀判定 → 尾部标点逐字符剥离且每步做存在性检查（防吃掉扩展名的点）。存在性经 `probe` 闭包注入（生产 `fileSystemProbe`，测试注假文件系统）。
+- `PathLinkDetector.swift` — `PathLink` 值类型（url + isDirectory + line/column，行列号解析保留、无消费方，ADR-0003）+ `PathLinkDetector.detect(line:index:cwd:home:probe:)` 纯函数：引号区候选优先（含空格路径唯一入口，撇号假引号区落空回退 token）→ token 切分（空白边界）+ 剥离前导包裹符 → 形态解析（绝对 / `~` 展开 / `file://` percent-decode / 相对仅挂非 nil `cwd`，`~user` 与 Windows 反斜杠不支持）→ 候选循环：原样 → 剥 `:line` → 剥 `:line:col`（字面命中优先），全落空剥一个尾部标点重来（防吃扩展名点）。另有 `link(fromFileURL:probe:)` 供 OPEN_URL file:// 改道入口。存在性经 `probe` 闭包注入（生产 `fileSystemProbe`，测试注假文件系统）。
 
 ## 模块规范
 
 - 本模块只依赖 Foundation：不 import AppKit / GhosttyKit / SwiftUI。像素/格子换算、`ghostty_surface_read_text` 等宿主事实属 `Terminal/GhosttySurfaceView`；Locate 的执行（navigate/reveal）属 `Workspace/WorkspaceController.locate`。
-- 检测器保持纯函数 + 注入式存在性检查，新增识别形态（相对路径、`~`、`path:line`、引号包裹、file://，见 issue #6）必须先补 `PathLinkDetectorTests` 再实现。
+- 检测器保持纯函数 + 注入式存在性检查（cwd/home 显式传参，不在检测器内读全局状态），新增识别形态必须先补 `PathLinkDetectorTests` 再实现。
 - 解析不出目标或目标不存在的文本段不构成 Path Link——存在性检查是构造 `PathLink` 的前提，不允许绕过。
 
 ## 依赖关系
@@ -28,4 +28,5 @@
 
 ## 变更日志
 
-- 2026-07-16 S39 FR-BRIDGE-003 #5 模块落地：`PathLinkDetector` 首版（仅绝对路径形态）。相对路径/cwd 语义/`~`/行号/引号/file:// 见 issue #6，⌘悬停反馈见 issue #7。
+- 2026-07-16 S39 FR-BRIDGE-003 #6 识别语法全集：`detect` 增 `cwd`/`home` 参数（相对路径仅挂 OSC 7 cwd，未知不触发；`~`/`~/…` 按注入 home 展开，`~user` 不支持）；`path:line[:col]` 剥离查存在、行列号进 `PathLink.line/column`（字面含冒号文件名优先）；引号区候选优先支持含空格路径（撇号假区落空回退）；`file://` percent-decode 后按本地路径处理 + `link(fromFileURL:probe:)` 供 OPEN_URL 改道；Windows 反斜杠自然 miss（负例测试）。`PathLinkDetectorTests` 15 → 36 例。
+- 2026-07-16 S39 FR-BRIDGE-003 #5 模块落地：`PathLinkDetector` 首版（仅绝对路径形态）。⌘悬停反馈见 issue #7。

@@ -42,6 +42,9 @@ final class GhosttyTerminalEngine: TerminalEngine {
         GhosttyApp.shared.registerTitleHandler(id: registrationID) { [weak self] surface, title in
             self?.handleTitleChange(surface: surface, title: title)
         }
+        GhosttyApp.shared.registerFileURLHandler(id: registrationID) { [weak self] surface, url in
+            self?.handleFileURLOpen(surface: surface, url: url)
+        }
     }
 
     deinit {
@@ -172,6 +175,7 @@ final class GhosttyTerminalEngine: TerminalEngine {
             } else {
                 url = URL(fileURLWithPath: pwd).standardizedFileURL
             }
+            view.reportedCwd = url
             onCwdChange?(id, url)
             return
         }
@@ -181,6 +185,18 @@ final class GhosttyTerminalEngine: TerminalEngine {
         for (id, view) in surfaceViews {
             guard view.surface == surface else { continue }
             onTitleChange?(id, title)
+            return
+        }
+    }
+
+    /// OPEN_URL 改道来的 file://（#6）：存在才构成 Path Link，随 onPathLinkClick 走 Locate；
+    /// 不存在静默吞掉（与「不存在路径不触发」一致），绝不回落系统打开。
+    private func handleFileURLOpen(surface: ghostty_surface_t, url: URL) {
+        for (id, view) in surfaceViews {
+            guard view.surface == surface else { continue }
+            guard let link = PathLinkDetector.link(fromFileURL: url,
+                                                   probe: PathLinkDetector.fileSystemProbe) else { return }
+            onPathLinkClick?(id, link)
             return
         }
     }

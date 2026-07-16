@@ -31,6 +31,7 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
     private let pwdLock = NSLock()
     private var pwdHandlers: [ObjectIdentifier: (ghostty_surface_t, String) -> Void] = [:]
     private var titleHandlers: [ObjectIdentifier: (ghostty_surface_t, String) -> Void] = [:]
+    private var fileURLHandlers: [ObjectIdentifier: (ghostty_surface_t, URL) -> Void] = [:]
 
     func registerPwdHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, String) -> Void) {
         pwdLock.lock(); defer { pwdLock.unlock() }
@@ -41,11 +42,19 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         pwdLock.lock(); defer { pwdLock.unlock() }
         pwdHandlers.removeValue(forKey: id)
         titleHandlers.removeValue(forKey: id)
+        fileURLHandlers.removeValue(forKey: id)
     }
 
     func registerTitleHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, String) -> Void) {
         pwdLock.lock(); defer { pwdLock.unlock() }
         titleHandlers[id] = handler
+    }
+
+    /// OPEN_URL 的 file:// 改道订阅（FR-BRIDGE-003 #6）：file:// 按本地路径走 Locate，
+    /// 绝不 NSWorkspace.open（ADR-0003）。覆盖 OSC 8 href 为 file:// 而显示文本不是路径的场景。
+    func registerFileURLHandler(id: ObjectIdentifier, handler: @escaping (ghostty_surface_t, URL) -> Void) {
+        pwdLock.lock(); defer { pwdLock.unlock() }
+        fileURLHandlers[id] = handler
     }
 
     private init() {
@@ -178,6 +187,17 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
             guard let ptr = openURL.url, openURL.len > 0 else { return false }
             let raw = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(openURL.len)), as: UTF8.self)
             guard let url = Self.openableURL(from: raw) else { return false }
+            if url.isFileURL {
+                // file:// 按本地路径走 Locate、绝不打开（ADR-0003）；engine 订阅后反查 session。
+                guard let surface else { return true }
+                pwdLock.lock()
+                let handlers = fileURLHandlers.values
+                pwdLock.unlock()
+                DispatchQueue.main.async {
+                    for handler in handlers { handler(surface, url) }
+                }
+                return true
+            }
             DispatchQueue.main.async {
                 NSWorkspace.shared.open(url)
             }

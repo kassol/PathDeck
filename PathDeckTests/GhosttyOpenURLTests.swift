@@ -21,8 +21,9 @@ struct GhosttyOpenURLTests {
         #expect(GhosttyApp.openableURL(from: "mailto:dev@example.com") != nil)
     }
 
-    @Test func fileURLIsOpenable() {
-        // #6 会把 file:// 改道 Locate；当前按系统打开处理。
+    @Test func fileURLParsesAsFileURL() {
+        // 解析层放行 file://；改道决策在 handleAction（isFileURL → Locate，绝不打开），
+        // 存在性判定见 PathLinkDetectorTests.linkFromFileURLProbesExistence。
         #expect(GhosttyApp.openableURL(from: "file:///tmp/foo.txt")?.isFileURL == true)
     }
 

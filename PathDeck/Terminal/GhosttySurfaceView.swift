@@ -20,6 +20,9 @@ final class GhosttySurfaceView: NSView {
     var onSurfaceFailed: ((SurfaceFailureReason) -> Void)?
     /// ⌘Click 命中 Path Link（FR-BRIDGE-003）：engine 反查 session 后派发 Locate。
     var onPathLinkClick: ((PathLink) -> Void)?
+    /// 本终端 OSC 7 最近上报的 cwd（engine 的 pwd handler 写入）。相对路径只挂在它上面；
+    /// nil（shell integration 未生效 / 未出首个 prompt）时相对路径不触发。
+    var reportedCwd: URL?
     private(set) var surface: ghostty_surface_t?
     private var markedText: String?
     private var heldModifierKeycodes: Set<UInt16> = []
@@ -550,7 +553,7 @@ final class GhosttySurfaceView: NSView {
         let index = prefix.count - 1
 
         guard let line = viewportText(row: row, fromCol: 0, toCol: Int(size.columns) - 1) else { return nil }
-        return PathLinkDetector.detect(line: line, index: index,
+        return PathLinkDetector.detect(line: line, index: index, cwd: reportedCwd,
                                        probe: PathLinkDetector.fileSystemProbe)
     }
 
