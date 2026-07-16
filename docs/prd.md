@@ -819,24 +819,32 @@ shell-escaped path
 
 优先级：P1
 
-Terminal 输出中的路径应可识别并点击打开。
+Terminal 输出中的本地路径与 URL 应可识别，⌘Click 定位或打开（点击语义见 ADR-0003）。
 
 能力包括：
 
 ```txt
-相对路径识别
-绝对路径识别
-file:line 格式识别
-URL 识别
-点击后在文件浏览器中定位或预览
+相对路径识别（仅当该终端 OSC 7 cwd 已知；未知则相对路径不触发）
+绝对路径与 ~ 展开识别
+path:line 与 path:line:col 识别（行列号解析保留，当前不消费）
+引号包裹的含空格路径识别
+file:// URL 按本地路径处理
+http(s) 等 URL 由终端引擎检测，⌘Click 交系统默认程序打开
+⌘Click 定位：文件 → 文件浏览器 reveal 并选中，Preview Pane 展示；目录 → 导航进入
+⌘+悬停：指针变化 + 浮层显示解析后的绝对路径（终端渲染层不画下划线）
+定位后键盘焦点留在终端
 ```
+
+非目标：Windows 反斜杠路径；设置开关（默认开启、无配置项）。
 
 验收标准：
 
 ```txt
-点击 README.md 打开当前 cwd 下 README.md
-点击 src/main.ts:42 打开文件并定位行号
-不存在路径不误触发
+⌘Click README.md 在文件浏览器中选中当前 cwd 下 README.md
+⌘Click src/main.ts:42 选中 src/main.ts（行号不消费）
+⌘Click 目录路径，文件浏览器导航进入该目录
+不存在路径不误触发；OSC 7 cwd 未知时相对路径不触发
+⌘Click URL 用系统默认浏览器打开
 ```
 
 ---
