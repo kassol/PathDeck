@@ -172,9 +172,10 @@ nonisolated final class GhosttyApp: @unchecked Sendable {
         case GHOSTTY_ACTION_OPEN_URL:
             // 终端输出中被 core 检测到的 URL（含 OSC 8 超链接）⌘Click：core 负责手势判定
             // 与下划线渲染，宿主只需响应打开请求，交系统默认程序。
+            // 不筛 kind：两条点击链路（regex URL / OSC 8）都发 KIND_UNKNOWN；text/html 仅
+            // write-screen-open 用（url 是裸文件路径），过不了 scheme 校验，回落 core fallback。
             let openURL = action.action.open_url
-            guard openURL.kind == GHOSTTY_ACTION_OPEN_URL_KIND_TEXT,
-                  let ptr = openURL.url, openURL.len > 0 else { return false }
+            guard let ptr = openURL.url, openURL.len > 0 else { return false }
             let raw = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(openURL.len)), as: UTF8.self)
             guard let url = Self.openableURL(from: raw) else { return false }
             DispatchQueue.main.async {

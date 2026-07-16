@@ -179,9 +179,12 @@ final class GhosttySurfaceView: NSView {
     override func mouseDown(with event: NSEvent) {
         let wasFocused = window?.firstResponder === self
         window?.makeFirstResponder(self)
-        // ⌘Click 命中 Path Link → 本地 Locate，不进 core（绕过 mouse reporting，终端惯例）；
-        // 未命中则照常转发，core 自己的 URL ⌘Click（OPEN_URL）不受影响。
-        if event.modifierFlags.contains(.command), let link = pathLink(at: event) {
+        // ⌘Click（纯 ⌘，不含 ⇧⌥⌃）命中 Path Link → 本地 Locate，不进 core（绕过 mouse
+        // reporting，终端惯例）；未命中则照常转发，core 自己的 URL ⌘Click（OPEN_URL）不受影响。
+        let clickFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if clickFlags.contains(.command),
+           clickFlags.isDisjoint(with: [.shift, .option, .control]),
+           let link = pathLink(at: event) {
             suppressNextLeftMouseUp = true
             onPathLinkClick?(link)
             return
@@ -537,22 +540,31 @@ final class GhosttySurfaceView: NSView {
         let row = Int(yPx / Double(size.cell_height_px))
         guard col < Int(size.columns), row < Int(size.rows) else { return nil }
 
-        guard let line = viewportRowText(row: row, columns: size.columns) else { return nil }
-        return PathLinkDetector.detect(line: line, index: col,
+        // 点击格必须非空白：行尾空区/词间空格直接 miss，也规避 read_text 尾部修剪的歧义。
+        guard let cell = viewportText(row: row, fromCol: col, toCol: col),
+              !cell.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        // 格子列 ≠ 字符下标（CJK 等宽字符占 2 格 1 字符）：用 core 自己的选区语义换算——
+        // [0, col] 前缀的字符数减一即点击字符下标（前缀末格非空白，不受尾部修剪影响）。
+        guard let prefix = viewportText(row: row, fromCol: 0, toCol: col),
+              !prefix.isEmpty else { return nil }
+        let index = prefix.count - 1
+
+        guard let line = viewportText(row: row, fromCol: 0, toCol: Int(size.columns) - 1) else { return nil }
+        return PathLinkDetector.detect(line: line, index: index,
                                        probe: PathLinkDetector.fileSystemProbe)
     }
 
-    /// 读取 viewport 第 `row` 行（0-based，顶部为 0）的整行文本。
-    private func viewportRowText(row: Int, columns: UInt16) -> String? {
+    /// 读取 viewport 第 `row` 行（0-based，顶部为 0）[fromCol, toCol] 闭区间的文本。
+    private func viewportText(row: Int, fromCol: Int, toCol: Int) -> String? {
         guard let surface else { return nil }
         var selection = ghostty_selection_s()
         selection.top_left = ghostty_point_s(
             tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
-            x: 0, y: UInt32(row)
+            x: UInt32(fromCol), y: UInt32(row)
         )
         selection.bottom_right = ghostty_point_s(
             tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
-            x: UInt32(columns) - 1, y: UInt32(row)
+            x: UInt32(toCol), y: UInt32(row)
         )
         selection.rectangle = false
 

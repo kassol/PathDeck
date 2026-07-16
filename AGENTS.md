@@ -44,7 +44,7 @@ PathDeck 是一个 Finder-first 的 macOS 文件工作台：以文件浏览为�
 
 ## 目录索引
 
-四个已落地模块：`FileWorkspace`（文件工作台）/ `Terminal`（libghostty 终端）/ `Workspace`（NSWindow tabbing + per-window 状态）/ `Settings`（外观偏好）。当前能力：多 NSWindow workspace（系统级 tabbing，拖出/合并/Mission Control）+ 目录就地展开/折叠 + 多终端 tab + 文件↔Terminal cwd 双向桥 + 6 套终端主题热重载 + i18n（en/zh-Hans）+ 系统入口（`pathdeck://` / Finder Services / Open With / CLI）。逐 sprint scope 见文末变更日志与各子目录 AGENTS.md。
+五个已落地模块：`FileWorkspace`（文件工作台）/ `Terminal`（libghostty 终端）/ `Workspace`（NSWindow tabbing + per-window 状态）/ `Settings`（外观偏好）/ `ContextBridge`（Path Link 检测纯逻辑）。当前能力：多 NSWindow workspace（系统级 tabbing，拖出/合并/Mission Control）+ 目录就地展开/折叠 + 多终端 tab + 文件↔Terminal cwd 双向桥 + 6 套终端主题热重载 + i18n（en/zh-Hans）+ 系统入口（`pathdeck://` / Finder Services / Open With / CLI）。逐 sprint scope 见文末变更日志与各子目录 AGENTS.md。
 
 ```
 PathDeck/                  App 源码
