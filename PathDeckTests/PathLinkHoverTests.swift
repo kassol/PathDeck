@@ -48,3 +48,57 @@ struct PathLinkHoverTests {
         #expect(origin == NSPoint(x: 0, y: 0))
     }
 }
+
+/// 悬停决策状态机：何时重跑命中检测 / 清理 / 保持（#7 时序语义的程序化回归）。
+struct PathLinkHoverTrackerTests {
+    @Test func firstCmdHoverEvaluates() {
+        var tracker = PathLinkHoverTracker()
+        #expect(tracker.update(cmdHeld: true, cell: (3, 5)) == .evaluate)
+    }
+
+    @Test func sameCellKeepsWithoutReevaluating() {
+        var tracker = PathLinkHoverTracker()
+        _ = tracker.update(cmdHeld: true, cell: (3, 5))
+        #expect(tracker.update(cmdHeld: true, cell: (3, 5)) == .keep)
+    }
+
+    @Test func newCellReevaluates() {
+        var tracker = PathLinkHoverTracker()
+        _ = tracker.update(cmdHeld: true, cell: (3, 5))
+        #expect(tracker.update(cmdHeld: true, cell: (4, 5)) == .evaluate)
+    }
+
+    @Test func releasingCmdClearsImmediately() {
+        var tracker = PathLinkHoverTracker()
+        _ = tracker.update(cmdHeld: true, cell: (3, 5))
+        #expect(tracker.update(cmdHeld: false, cell: (3, 5)) == .clear)
+    }
+
+    @Test func cmdAgainOnSameCellAfterClearReevaluates() {
+        // clear 必须作废缓存：松 ⌘ 再按，同格也要重跑检测（行内容可能已变）。
+        var tracker = PathLinkHoverTracker()
+        _ = tracker.update(cmdHeld: true, cell: (3, 5))
+        _ = tracker.update(cmdHeld: false, cell: (3, 5))
+        #expect(tracker.update(cmdHeld: true, cell: (3, 5)) == .evaluate)
+    }
+
+    @Test func leavingGridClears() {
+        var tracker = PathLinkHoverTracker()
+        _ = tracker.update(cmdHeld: true, cell: (3, 5))
+        #expect(tracker.update(cmdHeld: true, cell: nil) == .clear)
+    }
+
+    @Test func invalidateForcesReevaluationOnSameCell() {
+        // 滚动语义：内容换了，同格也要重估。
+        var tracker = PathLinkHoverTracker()
+        _ = tracker.update(cmdHeld: true, cell: (3, 5))
+        tracker.invalidate()
+        #expect(tracker.update(cmdHeld: true, cell: (3, 5)) == .evaluate)
+    }
+
+    @Test func hoverWithoutCmdAlwaysClears() {
+        var tracker = PathLinkHoverTracker()
+        #expect(tracker.update(cmdHeld: false, cell: (3, 5)) == .clear)
+        #expect(tracker.update(cmdHeld: false, cell: (4, 6)) == .clear)
+    }
+}

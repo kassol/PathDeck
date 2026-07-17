@@ -567,23 +567,30 @@ final class GhosttySurfaceView: NSView {
         return pathLink(atCell: cell)
     }
 
-    /// view 本地点 → 格子坐标：(x, 高度翻转 y) × scale − padding px，除以 cell px，越界 nil。
-    /// window-padding 由 ghostty 按 content scale 缩放（`TerminalConfigWriter` 写 pt 值）。
     private func gridCell(atLocal local: NSPoint) -> (col: Int, row: Int)? {
         guard let surface else { return nil }
         let size = ghostty_surface_size(surface)
-        guard size.columns > 0, size.rows > 0,
-              size.cell_width_px > 0, size.cell_height_px > 0 else { return nil }
+        return Self.gridCell(atLocal: local, boundsHeight: bounds.height, scale: scaleFactor,
+                             paddingPoints: TerminalPreferences.shared.padding,
+                             columns: Int(size.columns), rows: Int(size.rows),
+                             cellWidthPx: Int(size.cell_width_px), cellHeightPx: Int(size.cell_height_px))
+    }
 
-        let scale = scaleFactor
-        let paddingPx = Double(TerminalPreferences.shared.padding) * scale
+    /// view 本地点 → 格子坐标纯函数（可单测）：(x, 高度翻转 y) × scale − padding px，
+    /// 除以 cell px，padding 区/网格外 nil。window-padding 由 ghostty 按 content scale
+    /// 缩放（`TerminalConfigWriter` 写 pt 值），故 paddingPoints × scale。
+    static func gridCell(atLocal local: NSPoint, boundsHeight: CGFloat, scale: Double,
+                         paddingPoints: Int, columns: Int, rows: Int,
+                         cellWidthPx: Int, cellHeightPx: Int) -> (col: Int, row: Int)? {
+        guard columns > 0, rows > 0, cellWidthPx > 0, cellHeightPx > 0 else { return nil }
+        let paddingPx = Double(paddingPoints) * scale
         let xPx = local.x * scale - paddingPx
-        let yPx = (bounds.height - local.y) * scale - paddingPx
+        let yPx = (boundsHeight - local.y) * scale - paddingPx
         guard xPx >= 0, yPx >= 0 else { return nil }
 
-        let col = Int(xPx / Double(size.cell_width_px))
-        let row = Int(yPx / Double(size.cell_height_px))
-        guard col < Int(size.columns), row < Int(size.rows) else { return nil }
+        let col = Int(xPx / Double(cellWidthPx))
+        let row = Int(yPx / Double(cellHeightPx))
+        guard col < columns, row < rows else { return nil }
         return (col, row)
     }
 
@@ -614,8 +621,8 @@ final class GhosttySurfaceView: NSView {
 
     // MARK: - ⌘悬停反馈（FR-BRIDGE-003 #7）
 
-    /// 最近一次评估过的格子（同格不重复跑命中检测——快速扫过时的防抖）。
-    private var hoverCell: (col: Int, row: Int)?
+    /// 悬停决策状态机（同格不重复跑命中检测——快速扫过时的防抖；时序决策可单测）。
+    private var hoverTracker = PathLinkHoverTracker()
     private var hoverLink: PathLink?
     /// 悬停期是否由本视图接管了指针（清理时才恢复 arrow，不踩掉别人设的指针）。
     private var hoverCursorActive = false
@@ -648,21 +655,27 @@ final class GhosttySurfaceView: NSView {
     }
 
     /// ⌘+悬停命中 Path Link：pointingHand + 浮层显示解析后的绝对路径；
-    /// 松 ⌘ / 移出命中区 / 终端失焦立即恢复。命中检测按格子缓存，不阻塞渲染。
+    /// 松 ⌘ / 移出命中区 / 终端失焦立即恢复。何时重估/清理由 `PathLinkHoverTracker` 决策。
     private func updateHover(cmdHeld: Bool) {
-        guard cmdHeld, surface != nil, let local = lastMouseLocal,
-              let cell = gridCell(atLocal: local) else {
-            clearHover()
-            return
+        let cell: (col: Int, row: Int)?
+        if surface != nil, let local = lastMouseLocal {
+            cell = gridCell(atLocal: local)
+        } else {
+            cell = nil
         }
-        if hoverCell?.col != cell.col || hoverCell?.row != cell.row {
-            hoverCell = cell
-            hoverLink = pathLink(atCell: cell)
-            if let link = hoverLink {
+        switch hoverTracker.update(cmdHeld: cmdHeld, cell: cell) {
+        case .clear:
+            hoverLink = nil
+            hideHoverFeedback()
+        case .evaluate:
+            hoverLink = cell.flatMap { pathLink(atCell: $0) }
+            if let link = hoverLink, let local = lastMouseLocal {
                 showHoverFeedback(path: link.url.path(percentEncoded: false), near: local)
             } else {
                 hideHoverFeedback()
             }
+        case .keep:
+            break
         }
         if hoverLink != nil {
             NSCursor.pointingHand.set()
@@ -671,7 +684,7 @@ final class GhosttySurfaceView: NSView {
     }
 
     private func clearHover() {
-        hoverCell = nil
+        hoverTracker.invalidate()
         hoverLink = nil
         hideHoverFeedback()
     }
@@ -861,7 +874,7 @@ final class GhosttySurfaceView: NSView {
         ghostty_surface_mouse_scroll(surface, event.scrollingDeltaX, event.scrollingDeltaY, scrollMods)
 
         // 滚动后光标下的行已换内容：作废格子缓存并按当前修饰键重估悬停。
-        hoverCell = nil
+        hoverTracker.invalidate()
         updateHover(cmdHeld: event.modifierFlags.contains(.command))
     }
 }
